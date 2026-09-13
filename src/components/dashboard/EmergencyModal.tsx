@@ -11,8 +11,8 @@ import {
   Flame,
   Car,
   HeartCrack,
-  Activity,
   UserPlus,
+  AlertCircle,
 } from "lucide-react";
 import { useHospital } from "@/context/HospitalContext";
 
@@ -26,8 +26,7 @@ const EMERGENCY_PRESETS = [
     id: "cardiac",
     name: "Cardiac Arrest / STEMI",
     icon: HeartCrack,
-    bedId: "B-101",
-    bedLabel: "ICU Bay 01 (Cardiac Care)",
+    defaultWard: "ICU",
     statLab: ["STAT 12-Lead ECG", "Troponin-I (High Sens)", "Serum Electrolytes", "ABG"],
     severity: "Crash / Level 1",
   },
@@ -35,8 +34,7 @@ const EMERGENCY_PRESETS = [
     id: "road_accident",
     name: "Road Accident (Polytrauma)",
     icon: Car,
-    bedId: "B-102",
-    bedLabel: "Trauma Resus 02 (OT Bay)",
+    defaultWard: "Emergency",
     statLab: ["Crossmatch & 4U PRBC", "Whole Body CT", "eFAST USG", "Coagulation PT/INR"],
     severity: "Stat Resuscitation",
   },
@@ -44,29 +42,43 @@ const EMERGENCY_PRESETS = [
     id: "acid_burn",
     name: "Acid Burn / Severe Chemical Burn",
     icon: Flame,
-    bedId: "B-103",
-    bedLabel: "Burn Sterile Bay 03",
+    defaultWard: "Burn",
     statLab: ["Lactate & Anion Gap", "Saline Decontamination", "ABG Carbon Monoxide", "Renal Panel"],
     severity: "Immediate Critical Care",
   },
 ];
 
 export default function EmergencyModal({ isOpen, onClose }: EmergencyModalProps) {
-  const hospitalContext = useHospital() as any;
-  const { refreshPatients } = hospitalContext;
+  const { beds, setBeds, refreshPatients, patients } = useHospital() as any;
 
   const [selectedCase, setSelectedCase] = useState(EMERGENCY_PRESETS[0]);
+  
+  // Detailed Clinical Intake Fields
   const [patientName, setPatientName] = useState("");
-  const [patientAge, setPatientAge] = useState("");
-  const [selectedBed, setSelectedBed] = useState(EMERGENCY_PRESETS[0].bedLabel);
+  const [patientAge, setPatientAge] = useState<number | "">(35);
+  const [patientGender, setPatientGender] = useState<"Male" | "Female" | "Other">("Male");
+  const [bloodGroup, setBloodGroup] = useState("O+");
+  const [contactNo, setContactNo] = useState("9876543210");
+  const [initialVitals, setInitialVitals] = useState("BP 80/50, SpO2 88%, Pulse 130");
+
+  // Filter available beds from real hospital context
+  const availableBeds = beds?.filter((b: any) => b.status === "Available") || [];
+  const [selectedBedId, setSelectedBedId] = useState<string>("");
+
   const [selectedLabs, setSelectedLabs] = useState<string[]>(EMERGENCY_PRESETS[0].statLab);
   const [isDispatched, setIsDispatched] = useState(false);
+
+  // Sync initial bed selection
+  React.useEffect(() => {
+    if (availableBeds.length > 0 && !selectedBedId) {
+      setSelectedBedId(availableBeds[0].id || availableBeds[0].bedNumber);
+    }
+  }, [availableBeds, selectedBedId]);
 
   if (!isOpen) return null;
 
   const handleSelectCase = (preset: typeof EMERGENCY_PRESETS[0]) => {
     setSelectedCase(preset);
-    setSelectedBed(preset.bedLabel);
     setSelectedLabs(preset.statLab);
   };
 
@@ -78,23 +90,29 @@ export default function EmergencyModal({ isOpen, onClose }: EmergencyModalProps)
 
   const handleDispatch = async () => {
     const finalName = patientName.trim() || `ER Emergency (${selectedCase.name.split("/")[0]})`;
-    const finalAge = patientAge.trim() || "40 / Unknown";
+    const finalAge = typeof patientAge === "number" ? patientAge : 35;
     const emergencyAbha = `ABHA-ER-${Math.floor(1000 + Math.random() * 9000)}`;
+
+    // Identify target bed object
+    const targetBed = beds?.find((b: any) => b.id === selectedBedId || b.bedNumber === selectedBedId) || availableBeds[0];
+    const targetBedLabel = targetBed ? (targetBed.bedNumber || targetBed.id) : "ER-BED-01";
 
     const newPatientPayload = {
       name: finalName,
       age: finalAge,
-      gender: "Emergency Intake",
+      gender: patientGender,
+      contact: contactNo,
+      bloodGroup: bloodGroup,
       abhaId: emergencyAbha,
-      complaint: `[CODE RED ER] ${selectedCase.name} - Allocated Bed: ${selectedBed}`,
+      complaint: `[CODE RED ER] ${selectedCase.name}`,
       diagnosis: selectedCase.name,
-      vitals: "Critical / Resus Active",
-      treatment: `STAT Orders: ${selectedLabs.join(", ")}`,
-      bedNumber: selectedBed,
-      status: "In Treatment",
+      vitals: initialVitals,
+      treatment: `STAT: ${selectedLabs.join(", ")}`,
+      bedNumber: targetBedLabel,
+      status: "Admitted",
     };
 
-    // 1. API Call to persist patient in Database (SQLite via Prisma)
+    // 1. Persist to API / SQLite
     try {
       await fetch("/api/patients", {
         method: "POST",
@@ -102,29 +120,24 @@ export default function EmergencyModal({ isOpen, onClose }: EmergencyModalProps)
         body: JSON.stringify(newPatientPayload),
       });
     } catch (err) {
-      console.warn("Local persistence fallback", err);
+      console.warn("Local persistence warning:", err);
     }
 
-    // 2. Direct State updates for Patients & Wards
-    if (hospitalContext.setPatients) {
-      hospitalContext.setPatients((prev: any[]) => [
-        {
-          id: `ER-${Date.now()}`,
-          ...newPatientPayload,
-          createdAt: new Date().toISOString(),
-        },
-        ...prev,
-      ]);
-    }
-
-    // 3. Occupy Bed in Wards state
-    if (hospitalContext.setBeds) {
-      hospitalContext.setBeds((prevBeds: any[]) =>
-        prevBeds.map((b: any) =>
-          b.bedNumber === selectedBed || b.id === selectedCase.bedId
-            ? { ...b, status: "Occupied", patientName: finalName, condition: "Critical" }
-            : b
-        )
+    // 2. Direct Update to Wards State (Instantly marks bed Occupied with Patient Name)
+    if (setBeds) {
+      setBeds((prevBeds: any[]) =>
+        prevBeds.map((b: any) => {
+          if (b.id === targetBed?.id || b.bedNumber === targetBedLabel) {
+            return {
+              ...b,
+              status: "Occupied",
+              patientName: finalName,
+              diagnosis: selectedCase.name,
+              condition: "Critical (Code Red)",
+            };
+          }
+          return b;
+        })
       );
     }
 
@@ -141,9 +154,9 @@ export default function EmergencyModal({ isOpen, onClose }: EmergencyModalProps)
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-in fade-in duration-150">
-      <div className="bg-white w-full max-w-2xl rounded-3xl overflow-hidden shadow-2xl border border-rose-300 flex flex-col max-h-[90vh]">
+      <div className="bg-white w-full max-w-2xl rounded-3xl overflow-hidden shadow-2xl border border-rose-300 flex flex-col max-h-[92vh]">
         {/* Header */}
-        <div className="bg-gradient-to-r from-rose-700 via-red-600 to-rose-800 text-white p-5 flex items-center justify-between">
+        <div className="bg-gradient-to-r from-rose-700 via-red-600 to-rose-800 text-white p-5 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
             <div className="p-2.5 bg-white/20 rounded-2xl animate-pulse">
               <Siren className="w-6 h-6 text-white" />
@@ -154,11 +167,11 @@ export default function EmergencyModal({ isOpen, onClose }: EmergencyModalProps)
                   Code Red: Clinical Emergency Intake
                 </h2>
                 <span className="bg-rose-950/50 text-rose-200 border border-rose-300/30 px-2 py-0.5 rounded text-[10px] font-bold uppercase">
-                  Live DB Sync
+                  Direct Ward Sync
                 </span>
               </div>
               <p className="text-xs text-rose-100 mt-0.5">
-                Auto-saves to Patients & Locks Ward Bed
+                Detailed Emergency Record & Real-time Bed Allocation
               </p>
             </div>
           </div>
@@ -176,22 +189,22 @@ export default function EmergencyModal({ isOpen, onClose }: EmergencyModalProps)
               <CheckCircle2 className="w-10 h-10" />
             </div>
             <h3 className="text-xl font-black text-gray-900">
-              Emergency Case Saved & Bed Locked!
+              Emergency Case Admitted & Bed Locked!
             </h3>
-            <div className="text-xs text-gray-600 max-w-md space-y-1 bg-gray-50 p-4 rounded-2xl border border-gray-200 text-left">
-              <p><b>Patient:</b> {patientName || `Emergency Patient (${selectedCase.name.split("/")[0]})`}</p>
+            <div className="text-xs text-gray-600 max-w-md space-y-1.5 bg-gray-50 p-4 rounded-2xl border border-gray-200 text-left">
+              <p><b>Patient:</b> {patientName || `Emergency Patient (${selectedCase.name})`}</p>
+              <p><b>Age / Gender:</b> {patientAge} Yrs • {patientGender} • ({bloodGroup})</p>
+              <p><b>Assigned Bed:</b> <span className="text-emerald-700 font-bold">{selectedBedId} (Occupied)</span></p>
               <p><b>Condition:</b> {selectedCase.name}</p>
-              <p><b>Saved In Wards:</b> <span className="text-emerald-700 font-bold">{selectedBed} (Marked Occupied)</span></p>
-              <p><b>Saved In Patient Cases:</b> Active with ABHA sync</p>
-              <p><b>STAT Orders:</b> {selectedLabs.join(", ")}</p>
+              <p><b>STAT Labs:</b> {selectedLabs.join(", ")}</p>
             </div>
           </div>
         ) : (
           <div className="p-6 space-y-5 overflow-y-auto">
-            {/* Step 1: Select Case */}
+            {/* 1. Condition Selector */}
             <div>
               <label className="text-xs font-bold text-gray-700 uppercase tracking-wide block mb-2">
-                1. Select Emergency Condition
+                1. Select Emergency Case Condition
               </label>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                 {EMERGENCY_PRESETS.map((preset) => {
@@ -221,63 +234,135 @@ export default function EmergencyModal({ isOpen, onClose }: EmergencyModalProps)
               </div>
             </div>
 
-            {/* Step 2: Patient Info */}
-            <div className="bg-gray-50 p-3.5 rounded-2xl border border-gray-200">
-              <label className="text-xs font-bold text-gray-700 uppercase tracking-wide flex items-center gap-1 mb-2">
-                <UserPlus className="w-3.5 h-3.5 text-gray-600" /> 2. Patient Intake Details
+            {/* 2. Detailed Patient Intake Form */}
+            <div className="bg-gray-50 p-4 rounded-2xl border border-gray-200 space-y-3">
+              <label className="text-xs font-bold text-gray-800 uppercase tracking-wide flex items-center gap-1.5">
+                <UserPlus className="w-3.5 h-3.5 text-rose-600" /> 2. Clinical Intake Details
               </label>
-              <div className="grid grid-cols-3 gap-3">
-                <div className="col-span-2">
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="sm:col-span-2">
+                  <span className="text-[11px] font-bold text-gray-600 block mb-1">Patient Full Name</span>
                   <input
                     type="text"
-                    placeholder="Patient Name (e.g. Acid Trauma Case / John Doe)"
+                    placeholder="e.g. Acid Trauma Intake / Jane Doe"
                     value={patientName}
                     onChange={(e) => setPatientName(e.target.value)}
                     className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs text-gray-800 focus:outline-none focus:border-rose-500"
                   />
                 </div>
+
                 <div>
+                  <span className="text-[11px] font-bold text-gray-600 block mb-1">Age (Numeric)</span>
                   <input
-                    type="text"
-                    placeholder="Age / Gender"
+                    type="number"
+                    min="1"
+                    max="110"
+                    placeholder="Years"
                     value={patientAge}
-                    onChange={(e) => setPatientAge(e.target.value)}
+                    onChange={(e) => setPatientAge(e.target.value ? parseInt(e.target.value) : "")}
                     className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs text-gray-800 focus:outline-none focus:border-rose-500"
                   />
                 </div>
               </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <span className="text-[11px] font-bold text-gray-600 block mb-1">Gender</span>
+                  <select
+                    value={patientGender}
+                    onChange={(e) => setPatientGender(e.target.value as any)}
+                    className="w-full px-2.5 py-2 bg-white border border-gray-200 rounded-xl text-xs text-gray-800 focus:outline-none focus:border-rose-500"
+                  >
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+
+                <div>
+                  <span className="text-[11px] font-bold text-gray-600 block mb-1">Blood Group</span>
+                  <select
+                    value={bloodGroup}
+                    onChange={(e) => setBloodGroup(e.target.value)}
+                    className="w-full px-2.5 py-2 bg-white border border-gray-200 rounded-xl text-xs text-gray-800 focus:outline-none focus:border-rose-500"
+                  >
+                    {["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"].map((bg) => (
+                      <option key={bg} value={bg}>{bg}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <span className="text-[11px] font-bold text-gray-600 block mb-1">Emergency Contact</span>
+                  <input
+                    type="text"
+                    value={contactNo}
+                    onChange={(e) => setContactNo(e.target.value)}
+                    className="w-full px-2.5 py-2 bg-white border border-gray-200 rounded-xl text-xs text-gray-800 focus:outline-none focus:border-rose-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <span className="text-[11px] font-bold text-gray-600 block mb-1">Initial Resuscitation Vitals</span>
+                <input
+                  type="text"
+                  value={initialVitals}
+                  onChange={(e) => setInitialVitals(e.target.value)}
+                  placeholder="e.g. BP 90/60, SpO2 91%, Pulse 118"
+                  className="w-full px-3 py-1.5 bg-white border border-gray-200 rounded-xl text-xs text-gray-800 focus:outline-none focus:border-rose-500"
+                />
+              </div>
             </div>
 
-            {/* Step 3: Bed Target */}
+            {/* 3. Real Wards Bed Allocation */}
             <div>
               <div className="flex items-center justify-between mb-2">
                 <label className="text-xs font-bold text-gray-700 uppercase tracking-wide flex items-center gap-1.5">
-                  <BedDouble className="w-4 h-4 text-emerald-600" /> 3. Target Bed to Occupy in Wards View
+                  <BedDouble className="w-4 h-4 text-emerald-600" /> 3. Select Ward Bed to Allocate (Real Inventory)
                 </label>
                 <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-md">
-                  Auto-Assigned
+                  {availableBeds.length} Beds Free
                 </span>
               </div>
-              <div className="p-3 bg-emerald-50/70 border-2 border-emerald-500 rounded-2xl flex items-center justify-between">
-                <div>
-                  <span className="text-xs font-black text-gray-900 block">{selectedBed}</span>
-                  <p className="text-[10px] text-emerald-700 mt-0.5 font-medium">
-                    Will be marked OCCUPIED immediately in Wards & Beds screen.
-                  </p>
+
+              {availableBeds.length === 0 ? (
+                <div className="p-3 rounded-2xl bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4" /> No empty beds in inventory. Emergency spillover bed will be assigned.
                 </div>
-                <span className="text-[10px] font-bold px-2 py-1 rounded-lg bg-emerald-600 text-white uppercase">
-                  Locked
-                </span>
-              </div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-32 overflow-y-auto">
+                  {availableBeds.map((bed: any) => {
+                    const bedIdentifier = bed.bedNumber || bed.id;
+                    const isSelected = selectedBedId === bedIdentifier || selectedBedId === bed.id;
+                    return (
+                      <button
+                        key={bed.id}
+                        type="button"
+                        onClick={() => setSelectedBedId(bed.id || bed.bedNumber)}
+                        className={`p-2.5 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between ${
+                          isSelected
+                            ? "border-emerald-600 bg-emerald-50 text-emerald-950 font-bold ring-2 ring-emerald-400/30"
+                            : "border-gray-200 bg-white text-gray-600 hover:border-gray-300"
+                        }`}
+                      >
+                        <span className="text-xs font-bold">{bedIdentifier}</span>
+                        <span className="text-[10px] text-gray-400">{bed.ward || "General/ICU Ward"}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
-            {/* Step 4: STAT Labs */}
+            {/* 4. STAT Labs */}
             <div>
               <div className="flex items-center justify-between mb-2">
                 <label className="text-xs font-bold text-gray-700 uppercase tracking-wide flex items-center gap-1.5">
-                  <FlaskConical className="w-4 h-4 text-purple-600" /> 4. STAT Orders Dispatched
+                  <FlaskConical className="w-4 h-4 text-purple-600" /> 4. STAT Diagnostics Orders
                 </label>
-                <span className="text-[10px] text-gray-400">Included in Patient Record</span>
+                <span className="text-[10px] text-gray-400">Toggle as needed</span>
               </div>
               <div className="grid grid-cols-2 gap-2">
                 {selectedCase.statLab.map((lab) => {
@@ -304,7 +389,7 @@ export default function EmergencyModal({ isOpen, onClose }: EmergencyModalProps)
             </div>
 
             {/* Actions */}
-            <div className="pt-2 border-t border-gray-100 flex items-center justify-between gap-3">
+            <div className="pt-2 border-t border-gray-100 flex items-center justify-between gap-3 shrink-0">
               <button
                 type="button"
                 onClick={onClose}
@@ -318,7 +403,7 @@ export default function EmergencyModal({ isOpen, onClose }: EmergencyModalProps)
                 onClick={handleDispatch}
                 className="flex-1 py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs shadow-md shadow-rose-600/30 flex items-center justify-center gap-2 cursor-pointer transition"
               >
-                <Send className="w-4 h-4" /> Save Patient & Lock Assigned Bed
+                <Send className="w-4 h-4" /> Save Patient Case & Occupy Selected Bed
               </button>
             </div>
           </div>
