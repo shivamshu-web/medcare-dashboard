@@ -3,15 +3,16 @@
 import React, { useState } from "react";
 import {
   Siren,
-  AlertTriangle,
   BedDouble,
   FlaskConical,
   CheckCircle2,
   X,
   Send,
-  Sparkles,
+  Flame,
+  Car,
+  HeartCrack,
   Activity,
-  HeartPulse,
+  UserPlus,
 } from "lucide-react";
 import { useHospital } from "@/context/HospitalContext";
 
@@ -20,46 +21,71 @@ interface EmergencyModalProps {
   onClose: () => void;
 }
 
+// Case presets with auto bed mapping & protocol tests
+const EMERGENCY_PRESETS = [
+  {
+    id: "cardiac",
+    name: "Cardiac Arrest / STEMI",
+    icon: HeartCrack,
+    recommendedBed: "ICU-BAY-01 (Cardiac Care)",
+    statLab: ["STAT 12-Lead ECG", "Troponin-I (High Sens)", "Serum Electrolytes", "Arterial Blood Gas (ABG)"],
+    severity: "Crash / Level 1",
+  },
+  {
+    id: "road_accident",
+    name: "Road Accident (Polytrauma)",
+    icon: Car,
+    recommendedBed: "TRAUMA-RESUS-02 (Trauma OT)",
+    statLab: ["Crossmatch & 4U PRBC", "Whole Body Trauma CT", "Bedside eFAST USG", "Coagulation PT/INR"],
+    severity: "Stat Resuscitation",
+  },
+  {
+    id: "acid_burn",
+    name: "Acid Burn / Severe Chemical Burn",
+    icon: Flame,
+    recommendedBed: "ISOLATION-BURN-01 (Sterile Bay)",
+    statLab: ["Lactate & Anion Gap", "Copious Saline Decontamination", "ABG / Carbon Monoxide", "Renal Panel (BUN/Cr)"],
+    severity: "Immediate Critical Care",
+  },
+];
+
 export default function EmergencyModal({ isOpen, onClose }: EmergencyModalProps) {
-  const { beds, bloodStock } = useHospital();
+  const { bloodStock } = useHospital();
 
-  const [triageLevel, setTriageLevel] = useState<"Red" | "Orange" | "Yellow">("Red");
-  const [patientSummary, setPatientSummary] = useState("Unknown Trauma / Acute Hypotension");
-  const [selectedBed, setSelectedBed] = useState("ER-RESUS-01");
-  const [statOrders, setStatOrders] = useState({
-    abg: true,
-    troponin: true,
-    crossmatch: true,
-    ctTrauma: false,
-    focusedEcho: true,
-  });
-
+  const [selectedCase, setSelectedCase] = useState(EMERGENCY_PRESETS[0]);
+  const [patientName, setPatientName] = useState("");
+  const [patientAge, setPatientAge] = useState("");
+  const [selectedBed, setSelectedBed] = useState(EMERGENCY_PRESETS[0].recommendedBed);
+  const [selectedLabs, setSelectedLabs] = useState<string[]>(EMERGENCY_PRESETS[0].statLab);
   const [isDispatched, setIsDispatched] = useState(false);
 
   if (!isOpen) return null;
 
-  const toggleOrder = (key: keyof typeof statOrders) => {
-    setStatOrders((prev) => ({ ...prev, [key]: !prev[key] }));
+  const handleSelectCase = (preset: typeof EMERGENCY_PRESETS[0]) => {
+    setSelectedCase(preset);
+    setSelectedBed(preset.recommendedBed);
+    setSelectedLabs(preset.statLab);
   };
 
-  const availableErBeds = beds?.filter((b) => b.status === "Available") || [
-    { id: "ER-RESUS-01", ward: "Emergency Trauma Resus", bedNumber: "Bed 01" },
-    { id: "ER-CRIT-04", ward: "Emergency ICU Bay", bedNumber: "Bed 04" },
-  ];
+  const toggleLab = (lab: string) => {
+    setSelectedLabs((prev) =>
+      prev.includes(lab) ? prev.filter((item) => item !== lab) : [...prev, lab]
+    );
+  };
 
-  const handleTriggerDispatch = () => {
+  const handleDispatch = () => {
     setIsDispatched(true);
     setTimeout(() => {
       setIsDispatched(false);
       onClose();
-    }, 2400);
+    }, 2500);
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-in fade-in duration-150">
-      <div className="bg-white w-full max-w-2xl rounded-3xl overflow-hidden shadow-2xl border border-rose-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-in fade-in duration-150">
+      <div className="bg-white w-full max-w-2xl rounded-3xl overflow-hidden shadow-2xl border border-rose-300 flex flex-col max-h-[90vh]">
         {/* Header */}
-        <div className="bg-gradient-to-r from-rose-600 via-red-600 to-rose-700 text-white p-5 flex items-center justify-between">
+        <div className="bg-gradient-to-r from-rose-700 via-red-600 to-rose-800 text-white p-5 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="p-2.5 bg-white/20 rounded-2xl animate-pulse">
               <Siren className="w-6 h-6 text-white" />
@@ -67,14 +93,14 @@ export default function EmergencyModal({ isOpen, onClose }: EmergencyModalProps)
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-lg font-black tracking-tight uppercase">
-                  Code Red Emergency Dispatch
+                  Code Red: Clinical Emergency Intake
                 </h2>
-                <span className="bg-white/25 text-white px-2 py-0.5 rounded text-[10px] font-extrabold uppercase">
-                  Level 1 Trauma
+                <span className="bg-rose-950/50 text-rose-200 border border-rose-300/30 px-2 py-0.5 rounded text-[10px] font-bold uppercase">
+                  Automated Triage
                 </span>
               </div>
-              <p className="text-xs text-rose-100">
-                Instant ER Bed Reserve & Automated STAT Diagnostics Order
+              <p className="text-xs text-rose-100 mt-0.5">
+                Dynamic Bed Reservation & STAT Diagnostic Dispatch
               </p>
             </div>
           </div>
@@ -92,127 +118,125 @@ export default function EmergencyModal({ isOpen, onClose }: EmergencyModalProps)
               <CheckCircle2 className="w-10 h-10" />
             </div>
             <h3 className="text-xl font-black text-gray-900">
-              Emergency Workflow Dispatched!
+              Emergency Code Dispatched!
             </h3>
-            <p className="text-xs text-gray-500 max-w-md">
-              Bed <b className="text-gray-900">{selectedBed}</b> reserved immediately. STAT Lab orders routed to Central Pathology & Crossmatch initiated.
-            </p>
+            <div className="text-xs text-gray-600 max-w-md space-y-1 bg-gray-50 p-4 rounded-2xl border border-gray-200">
+              <p><b>Patient:</b> {patientName || "Unknown Trauma Case"} ({patientAge || "Adult"})</p>
+              <p><b>Condition:</b> {selectedCase.name}</p>
+              <p><b>Reserved Bed:</b> <span className="text-emerald-700 font-bold">{selectedBed}</span></p>
+              <p><b>STAT Orders:</b> {selectedLabs.join(", ")}</p>
+            </div>
           </div>
         ) : (
-          <div className="p-6 space-y-6 max-h-[80vh] overflow-y-auto">
-            {/* Step 1: Patient Triage & Vitals Quick Banner */}
+          <div className="p-6 space-y-5 overflow-y-auto">
+            {/* Step 1: Select Emergency Case Type */}
             <div>
-              <label className="text-xs font-bold text-gray-700 uppercase tracking-wide flex items-center gap-1.5 mb-2">
-                <AlertTriangle className="w-4 h-4 text-rose-600" /> Patient Presentation / Triage Category
+              <label className="text-xs font-bold text-gray-700 uppercase tracking-wide block mb-2">
+                1. Select Emergency Case Type (Auto-configures Bed & Tests)
               </label>
-              <div className="grid grid-cols-3 gap-2.5">
-                {[
-                  { level: "Red", label: "Crash / Arrest / MAP < 60", color: "border-rose-500 bg-rose-50 text-rose-800" },
-                  { level: "Orange", label: "Severe Trauma / Sepsis", color: "border-amber-500 bg-amber-50 text-amber-800" },
-                  { level: "Yellow", label: "Urgent Observation", color: "border-yellow-500 bg-yellow-50 text-yellow-800" },
-                ].map((item) => (
-                  <button
-                    key={item.level}
-                    type="button"
-                    onClick={() => setTriageLevel(item.level as any)}
-                    className={`p-2.5 rounded-2xl border-2 text-left transition cursor-pointer ${
-                      triageLevel === item.level
-                        ? `${item.color} shadow-xs font-black ring-2 ring-rose-400/40`
-                        : "border-gray-200 bg-white text-gray-600 hover:border-gray-300"
-                    }`}
-                  >
-                    <span className="text-xs block font-bold">Priority: {item.level}</span>
-                    <span className="text-[10px] opacity-80">{item.label}</span>
-                  </button>
-                ))}
-              </div>
-              <input
-                type="text"
-                value={patientSummary}
-                onChange={(e) => setPatientSummary(e.target.value)}
-                placeholder="Trauma / Acute Symptoms description..."
-                className="w-full mt-2.5 px-3.5 py-2 border border-gray-200 rounded-xl text-xs text-gray-800 font-medium focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500"
-              />
-            </div>
-
-            {/* Step 2: Instant ER Bed Allocation */}
-            <div>
-              <label className="text-xs font-bold text-gray-700 uppercase tracking-wide flex items-center gap-1.5 mb-2">
-                <BedDouble className="w-4 h-4 text-emerald-600" /> Direct ER Bed Reservation
-              </label>
-              <div className="grid grid-cols-2 gap-3">
-                {availableErBeds.slice(0, 4).map((b: any) => {
-                  const isSelected = selectedBed === b.id || selectedBed === b.bedNumber;
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                {EMERGENCY_PRESETS.map((preset) => {
+                  const Icon = preset.icon;
+                  const isSelected = selectedCase.id === preset.id;
                   return (
-                    <div
-                      key={b.id}
-                      onClick={() => setSelectedBed(b.id || b.bedNumber)}
-                      className={`p-3 rounded-2xl border-2 cursor-pointer transition flex items-center justify-between ${
+                    <button
+                      key={preset.id}
+                      type="button"
+                      onClick={() => handleSelectCase(preset)}
+                      className={`p-3 rounded-2xl border-2 text-left transition cursor-pointer flex flex-col justify-between ${
                         isSelected
-                          ? "border-emerald-600 bg-emerald-50/60 shadow-xs"
-                          : "border-gray-200 bg-white hover:border-emerald-300"
+                          ? "border-rose-600 bg-rose-50/70 text-rose-950 font-bold ring-2 ring-rose-400/30"
+                          : "border-gray-200 bg-white text-gray-600 hover:border-gray-300"
                       }`}
                     >
-                      <div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-xs font-extrabold text-gray-900">
-                            {b.bedNumber || b.id}
-                          </span>
-                          <span className="text-[9px] px-1.5 py-0.5 rounded-full font-bold bg-emerald-100 text-emerald-800">
-                            Equipped
-                          </span>
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className={`p-1.5 rounded-lg ${isSelected ? "bg-rose-600 text-white" : "bg-gray-100 text-gray-600"}`}>
+                          <Icon className="w-4 h-4" />
                         </div>
-                        <p className="text-[10px] text-gray-400 mt-0.5">
-                          {b.ward || "Trauma Stabilization Bay"}
-                        </p>
+                        <span className="text-xs font-bold leading-tight">{preset.name}</span>
                       </div>
-                      <div
-                        className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
-                          isSelected ? "border-emerald-600 bg-emerald-600" : "border-gray-300"
-                        }`}
-                      >
-                        {isSelected && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
-                      </div>
-                    </div>
+                      <span className="text-[10px] text-rose-600 font-semibold">{preset.severity}</span>
+                    </button>
                   );
                 })}
               </div>
             </div>
 
-            {/* Step 3: STAT Diagnostics & Blood Reserve Dispatch */}
+            {/* Step 2: Patient Info */}
+            <div className="bg-gray-50 p-3.5 rounded-2xl border border-gray-200">
+              <label className="text-xs font-bold text-gray-700 uppercase tracking-wide flex items-center gap-1 mb-2">
+                <UserPlus className="w-3.5 h-3.5 text-gray-600" /> 2. Patient Intake Details
+              </label>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-2">
+                  <input
+                    type="text"
+                    placeholder="Patient Name (e.g. Unknown Male / Jane Doe)"
+                    value={patientName}
+                    onChange={(e) => setPatientName(e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs text-gray-800 focus:outline-none focus:border-rose-500"
+                  />
+                </div>
+                <div>
+                  <input
+                    type="text"
+                    placeholder="Age / Gender"
+                    value={patientAge}
+                    onChange={(e) => setPatientAge(e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs text-gray-800 focus:outline-none focus:border-rose-500"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Step 3: Allocated Specialized Bed */}
             <div>
               <div className="flex items-center justify-between mb-2">
                 <label className="text-xs font-bold text-gray-700 uppercase tracking-wide flex items-center gap-1.5">
-                  <FlaskConical className="w-4 h-4 text-purple-600" /> Automated STAT Lab & Diagnostic Orders
+                  <BedDouble className="w-4 h-4 text-emerald-600" /> 3. Dedicated Bed Allocation (Auto-Selected)
                 </label>
-                <span className="text-[10px] font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-md border border-purple-200">
-                  Pathology Express Queue
+                <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-md">
+                  Immediate Lock
                 </span>
               </div>
+              <div className="p-3 bg-emerald-50/70 border-2 border-emerald-500 rounded-2xl flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-black text-gray-900 block">{selectedBed}</span>
+                  <p className="text-[10px] text-emerald-700 mt-0.5 font-medium">
+                    Optimized specialized equipment active for {selectedCase.name}
+                  </p>
+                </div>
+                <span className="text-[10px] font-bold px-2 py-1 rounded-lg bg-emerald-600 text-white uppercase">
+                  Assigned
+                </span>
+              </div>
+            </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                {[
-                  { key: "abg", label: "Arterial Blood Gas (ABG)", stat: "10 mins" },
-                  { key: "troponin", label: "STAT Troponin-I / ECG", stat: "15 mins" },
-                  { key: "crossmatch", label: "Crossmatch & 2U PRBC", stat: "Immediate" },
-                  { key: "focusedEcho", label: "eFAST / Point-of-Care US", stat: "Bedside" },
-                  { key: "ctTrauma", label: "Whole Body STAT CT", stat: "On-Call" },
-                ].map((test) => {
-                  const active = statOrders[test.key as keyof typeof statOrders];
+            {/* Step 4: Automated STAT Lab Orders */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-xs font-bold text-gray-700 uppercase tracking-wide flex items-center gap-1.5">
+                  <FlaskConical className="w-4 h-4 text-purple-600" /> 4. STAT Diagnostics (Express Pipeline)
+                </label>
+                <span className="text-[10px] text-gray-400">Click to toggle test</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {selectedCase.statLab.map((lab) => {
+                  const active = selectedLabs.includes(lab);
                   return (
                     <button
-                      key={test.key}
+                      key={lab}
                       type="button"
-                      onClick={() => toggleOrder(test.key as keyof typeof statOrders)}
-                      className={`p-2.5 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between ${
+                      onClick={() => toggleLab(lab)}
+                      className={`p-2.5 rounded-xl border text-left text-xs transition cursor-pointer flex items-center justify-between ${
                         active
-                          ? "border-purple-500 bg-purple-50/70 text-purple-950 font-bold"
-                          : "border-gray-200 bg-gray-50/50 text-gray-500"
+                          ? "border-purple-500 bg-purple-50 text-purple-950 font-bold"
+                          : "border-gray-200 bg-gray-50 text-gray-400"
                       }`}
                     >
-                      <span className="text-[11px] block">{test.label}</span>
-                      <span className="text-[9px] text-purple-700 font-semibold mt-1">
-                        Turnaround: {test.stat}
+                      <span>{lab}</span>
+                      <span className="text-[9px] px-1.5 py-0.5 rounded font-bold uppercase bg-purple-200 text-purple-800">
+                        STAT
                       </span>
                     </button>
                   );
@@ -220,7 +244,7 @@ export default function EmergencyModal({ isOpen, onClose }: EmergencyModalProps)
               </div>
             </div>
 
-            {/* Bottom Actions */}
+            {/* Actions */}
             <div className="pt-2 border-t border-gray-100 flex items-center justify-between gap-3">
               <button
                 type="button"
@@ -232,10 +256,10 @@ export default function EmergencyModal({ isOpen, onClose }: EmergencyModalProps)
 
               <button
                 type="button"
-                onClick={handleTriggerDispatch}
+                onClick={handleDispatch}
                 className="flex-1 py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs shadow-md shadow-rose-600/30 flex items-center justify-center gap-2 cursor-pointer transition"
               >
-                <Send className="w-4 h-4" /> Trigger CODE RED Protocol & Lock Bed
+                <Send className="w-4 h-4" /> Trigger Emergency Lock & Dispatch
               </button>
             </div>
           </div>
