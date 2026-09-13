@@ -6,6 +6,7 @@ import Header from "@/components/layout/Header";
 import PatientChart from "@/components/dashboard/PatientChart";
 import CaseTakingModal from "@/components/case-taking/CaseTakingModal";
 import PatientProfileView from "@/components/dashboard/PatientProfileView";
+import VitalsCard from "@/components/VitalsCard";
 import type { PatientData } from "@/components/dashboard/PatientProfileView";
 import PatientTableView from "@/components/dashboard/PatientTableView";
 import WardsView from "@/components/dashboard/WardsView";
@@ -389,6 +390,11 @@ function Dashboard() {
                         </p>
                       </div>
                     </div>
+                  </div>
+
+                  {/* Automated Vitals Calculation Card */}
+                  <div className="w-full">
+                    <VitalsCard />
                   </div>
 
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
