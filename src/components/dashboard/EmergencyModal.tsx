@@ -87,15 +87,26 @@ export default function EmergencyModal({ isOpen, onClose }: EmergencyModalProps)
       prev.includes(lab) ? prev.filter((item) => item !== lab) : [...prev, lab]
     );
   };
-
   const handleDispatch = async () => {
-    const finalName = patientName.trim() || `ER Emergency (${selectedCase.name.split("/")[0]})`;
+    const finalName =
+      patientName.trim() || `ER Patient (${selectedCase.name.split("/")[0]})`;
     const finalAge = typeof patientAge === "number" ? patientAge : 35;
     const emergencyAbha = `ABHA-ER-${Math.floor(1000 + Math.random() * 9000)}`;
 
-    // Identify target bed object
-    const targetBed = beds?.find((b: any) => b.id === selectedBedId || b.bedNumber === selectedBedId) || availableBeds[0];
-    const targetBedLabel = targetBed ? (targetBed.bedNumber || targetBed.id) : "ER-BED-01";
+    // Target bed dhundhna (safe property check)
+    const targetBed =
+      beds?.find(
+        (b: any) =>
+          b.id === selectedBedId ||
+          b.bedNumber === selectedBedId ||
+          b.number === selectedBedId
+      ) || availableBeds[0];
+
+    const targetBedLabel = targetBed
+      ? (targetBed as any).bedNumber ||
+        (targetBed as any).number ||
+        targetBed.id
+      : selectedBedId || "ER-BED-01";
 
     const newPatientPayload = {
       name: finalName,
@@ -112,7 +123,7 @@ export default function EmergencyModal({ isOpen, onClose }: EmergencyModalProps)
       status: "Admitted",
     };
 
-    // 1. Persist to API / SQLite
+    // 1. API Call: SQLite Database mein patient save karein
     try {
       await fetch("/api/patients", {
         method: "POST",
@@ -120,18 +131,25 @@ export default function EmergencyModal({ isOpen, onClose }: EmergencyModalProps)
         body: JSON.stringify(newPatientPayload),
       });
     } catch (err) {
-      console.warn("Local persistence warning:", err);
+      console.warn("DB persistence warning:", err);
     }
 
-    // 2. Direct Update to Wards State (Instantly marks bed Occupied with Patient Name)
+    // 2. HospitalContext Occupy Bed (Direct state update bina TS error ke)
     if (setBeds) {
       setBeds((prevBeds: any[]) =>
         prevBeds.map((b: any) => {
-          if (b.id === targetBed?.id || b.bedNumber === targetBedLabel) {
+          const isMatch =
+            b.id === targetBed?.id ||
+            b.id === selectedBedId ||
+            (b as any).bedNumber === targetBedLabel ||
+            (b as any).number === targetBedLabel;
+
+          if (isMatch) {
             return {
               ...b,
               status: "Occupied",
               patientName: finalName,
+              patient: finalName,
               diagnosis: selectedCase.name,
               condition: "Critical (Code Red)",
             };
@@ -141,17 +159,40 @@ export default function EmergencyModal({ isOpen, onClose }: EmergencyModalProps)
       );
     }
 
+    // 3. Fallback Storage Sync: WardsView ke instant refresh ke liye
+    try {
+      const allocatedBedData = {
+        bedNumber: targetBedLabel,
+        patientName: finalName,
+        condition: "Critical (Code Red)",
+        diagnosis: selectedCase.name,
+        status: "Occupied",
+        allocatedAt: new Date().toLocaleTimeString(),
+      };
+      const existing = JSON.parse(
+        localStorage.getItem("emergency_allocated_beds") || "[]"
+      );
+      localStorage.setItem(
+        "emergency_allocated_beds",
+        JSON.stringify([allocatedBedData, ...existing])
+      );
+      window.dispatchEvent(new Event("emergency_bed_update"));
+    } catch (e) {
+      console.error(e);
+    }
+
+    // 4. Patient table refresh trigger
     if (refreshPatients) {
       refreshPatients();
     }
 
+    // 5. Success UI state & auto close
     setIsDispatched(true);
     setTimeout(() => {
       setIsDispatched(false);
       onClose();
-    }, 2200);
+    }, 2000);
   };
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-in fade-in duration-150">
       <div className="bg-white w-full max-w-2xl rounded-3xl overflow-hidden shadow-2xl border border-rose-300 flex flex-col max-h-[92vh]">
