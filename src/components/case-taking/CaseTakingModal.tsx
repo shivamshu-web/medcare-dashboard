@@ -10,9 +10,9 @@ import {
   Save,
   Languages,
   CheckCircle2,
+  BedDouble,
 } from "lucide-react";
 import { useHospital } from "@/context/HospitalContext";
-const { setPatients, setBeds, refreshPatients } = useHospital() as any;
 
 interface CaseTakingModalProps {
   isOpen: boolean;
@@ -20,13 +20,15 @@ interface CaseTakingModalProps {
 }
 
 export default function CaseTakingModal({ isOpen, onClose }: CaseTakingModalProps) {
-  const { setPatients, refreshPatients } = useHospital() as any;
+  // Context hook called strictly inside function component
+  const { setPatients, setBeds, refreshPatients } = useHospital() as any;
 
   // Basic Form Fields
   const [patientName, setPatientName] = useState("");
   const [age, setAge] = useState("");
   const [gender, setGender] = useState("Male");
   const [abhaId, setAbhaId] = useState("");
+  const [selectedBed, setSelectedBed] = useState("GEN-WARD-11");
 
   // Clinical Vitals
   const [bpSystolic, setBpSystolic] = useState("120");
@@ -142,61 +144,64 @@ export default function CaseTakingModal({ isOpen, onClose }: CaseTakingModalProp
 
     const uniqueId = `PAT-${Math.floor(1000 + Math.random() * 9000)}`;
     const finalVitals = `BP ${bpSystolic}/${bpDiastolic}, HR ${pulse}, SpO2 ${spO2}%, Temp ${temperature}°F`;
-    // CaseTakingModal.tsx ke handleSubmit ke andar:
-   
-const newPatient = {
-  id: uniqueId,
-  name: patientName.trim(),
-  age: Number(age) || 35,
-  gender: gender || "Male",
-  contact: "+91 98765 43210",
-  bloodGroup: "B+",
-  abhaId: abhaId.trim() || `91-${Math.floor(1000 + Math.random() * 9000)}-${Math.floor(1000 + Math.random() * 9000)}-${Math.floor(1000 + Math.random() * 9000)}`,
-  complaint: symptoms.trim() || "Routine General Health Consultation",
-  diagnosis: caseNotes.trim() || "OPD Clinical Consultation",
-  vitals: finalVitals,
-  treatment: caseNotes.trim() || "Vitals within normal baseline.",
-  bedNumber: "GEN-WARD-11", // Default ward allocation
-  status: "Admitted",
-  createdAt: new Date().toISOString(),
-};
+    const finalDiagnosis = caseNotes.trim() || "OPD Clinical Consultation";
+    const finalComplaint = symptoms.trim() || "Routine General Health Consultation";
+    const isAdmitted = selectedBed && selectedBed !== "OPD";
 
-// State update
-if (setPatients) {
-  setPatients((prev: any[]) => [newPatient, ...(prev || [])]);
-}
+    const newPatient = {
+      id: uniqueId,
+      name: patientName.trim(),
+      age: Number(age) || 35,
+      gender: gender || "Male",
+      contact: "+91 98765 43210",
+      bloodGroup: "B+",
+      abhaId:
+        abhaId.trim() ||
+        `91-${Math.floor(1000 + Math.random() * 9000)}-${Math.floor(
+          1000 + Math.random() * 9000
+        )}-${Math.floor(1000 + Math.random() * 9000)}`,
+      complaint: finalComplaint,
+      diagnosis: finalDiagnosis,
+      vitals: finalVitals,
+      treatment: caseNotes.trim() || "Prescription active. Monitored recovery.",
+      bedNumber: selectedBed,
+      status: isAdmitted ? "Admitted" : "OPD",
+      createdAt: new Date().toISOString(),
+    };
 
-// Bed occupy update (safe check ke sath)
-if (setBeds) {
-  setBeds((prevBeds: any[]) =>
-    (prevBeds || []).map((b: any) =>
-      b.bedNumber === "GEN-WARD-11" || b.id === "GEN-WARD-11"
-        ? {
-            ...b,
-            status: "Occupied",
-            patientName: patientName.trim(),
-            patient: patientName.trim(),
-            condition: "Stable",
-            diagnosis: caseNotes.trim() || "OPD Clinical Consultation",
-          }
-        : b
-    )
-  );
-}
-    // 1. HospitalContext + LocalStorage mein guaranteed persistent save
+    // 1. Guaranteed LocalStorage Save (Refresh safe backup)
+    try {
+      const stored = JSON.parse(localStorage.getItem("medcare_patients_db") || "[]");
+      localStorage.setItem("medcare_patients_db", JSON.stringify([newPatient, ...stored]));
+    } catch (err) {
+      console.warn("LocalStorage save warn:", err);
+    }
+
+    // 2. HospitalContext Live Update (Updates Patient Cases table immediately)
     if (setPatients) {
       setPatients((prev: any[]) => [newPatient, ...(prev || [])]);
     }
 
-    // 2. Local Storage explicit backup taaki refresh par kabhi gayab na ho
-    try {
-      const existing = JSON.parse(localStorage.getItem("medcare_patients_db") || "[]");
-      localStorage.setItem("medcare_patients_db", JSON.stringify([newPatient, ...existing]));
-    } catch (err) {
-      console.warn("Storage sync:", err);
+    // 3. Wards State Live Update (Locks Bed in Wards & Beds screen)
+    if (isAdmitted && setBeds) {
+      setBeds((prevBeds: any[]) =>
+        (prevBeds || []).map((b: any) =>
+          b.bedNumber === selectedBed || b.id === selectedBed
+            ? {
+                ...b,
+                status: "Occupied",
+                patientName: newPatient.name,
+                patient: newPatient.name,
+                condition: "Stable",
+                diagnosis: finalDiagnosis,
+                vitals: finalVitals,
+              }
+            : b
+        )
+      );
     }
 
-    // 3. API backend call (SQLite Prisma)
+    // 4. Background SQLite Prisma API sync
     try {
       await fetch("/api/patients", {
         method: "POST",
@@ -204,17 +209,15 @@ if (setBeds) {
         body: JSON.stringify(newPatient),
       });
     } catch (err) {
-      console.warn("API write skipped, saved locally.", err);
+      console.warn("Backend API sync offline, persisted locally.");
     }
 
-    if (refreshPatients) {
-      refreshPatients();
-    }
+    if (refreshPatients) refreshPatients();
 
     // Show "Saved Successfully" Banner
     setShowSuccess(true);
 
-    // 1.2s baad reset aur close modal
+    // Close modal & reset fields
     setTimeout(() => {
       setShowSuccess(false);
       setPatientName("");
@@ -222,6 +225,7 @@ if (setBeds) {
       setAbhaId("");
       setSymptoms("");
       setCaseNotes("");
+      setSelectedBed("GEN-WARD-11");
       onClose();
     }, 1200);
   };
@@ -230,14 +234,13 @@ if (setBeds) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 overflow-y-auto">
-      <div className="bg-white w-full max-w-2xl rounded-3xl p-6 shadow-2xl space-y-5 border border-gray-100 my-6 relative animate-in fade-in zoom-in-95 duration-150">
-        
+      <div className="bg-white w-full max-w-2xl rounded-3xl p-6 shadow-2xl space-y-5 border border-gray-100 my-6 relative animate-in fade-in zoom-in-95 duration-150 font-sans">
         {/* Saved Successfully Floating Toast */}
         {showSuccess && (
           <div className="absolute inset-x-6 top-6 z-20 p-4 bg-[#072a22] text-emerald-300 border border-emerald-400/30 rounded-2xl flex items-center justify-center gap-2.5 shadow-xl animate-in slide-in-from-top duration-200">
             <CheckCircle2 className="w-5 h-5 text-emerald-400" />
             <span className="font-black text-sm">
-              Saved Successfully! Case Added to Clinical Records.
+              Saved Successfully! Case Added to Clinical Records & Wards.
             </span>
           </div>
         )}
@@ -328,7 +331,7 @@ if (setBeds) {
                 placeholder="e.g. Ramesh Kumar"
                 value={patientName}
                 onChange={(e) => setPatientName(e.target.value)}
-                className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl font-semibold text-gray-800"
+                className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl font-semibold text-gray-800 focus:outline-none focus:border-emerald-600"
               />
             </div>
 
@@ -342,12 +345,12 @@ if (setBeds) {
                   placeholder="Age"
                   value={age}
                   onChange={(e) => setAge(e.target.value)}
-                  className="w-1/2 p-2.5 bg-gray-50 border border-gray-200 rounded-xl font-semibold text-gray-800"
+                  className="w-1/2 p-2.5 bg-gray-50 border border-gray-200 rounded-xl font-semibold text-gray-800 focus:outline-none focus:border-emerald-600"
                 />
                 <select
                   value={gender}
                   onChange={(e) => setGender(e.target.value)}
-                  className="w-1/2 p-2.5 bg-gray-50 border border-gray-200 rounded-xl font-semibold text-gray-800"
+                  className="w-1/2 p-2.5 bg-gray-50 border border-gray-200 rounded-xl font-semibold text-gray-800 focus:outline-none focus:border-emerald-600"
                 >
                   <option value="Male">Male</option>
                   <option value="Female">Female</option>
@@ -364,7 +367,7 @@ if (setBeds) {
                 <button
                   type="button"
                   onClick={handleGenerateAbha}
-                  className="text-[10px] font-bold text-emerald-700 cursor-pointer"
+                  className="text-[10px] font-bold text-emerald-700 cursor-pointer hover:underline"
                 >
                   Generate
                 </button>
@@ -374,8 +377,30 @@ if (setBeds) {
                 placeholder="91-XXXX-XXXX-XXXX"
                 value={abhaId}
                 onChange={(e) => setAbhaId(e.target.value)}
-                className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl font-mono font-bold text-gray-800"
+                className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl font-mono font-bold text-gray-800 focus:outline-none focus:border-emerald-600"
               />
+            </div>
+          </div>
+
+          {/* Ward Bed Allocation Selection */}
+          <div>
+            <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">
+              Ward Bed Allocation (Direct Hospital Sync)
+            </label>
+            <div className="relative">
+              <select
+                value={selectedBed}
+                onChange={(e) => setSelectedBed(e.target.value)}
+                className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl font-bold text-gray-800 focus:outline-none focus:border-emerald-600"
+              >
+                <option value="GEN-WARD-11">GEN-WARD-11 (General Medicine Male)</option>
+                <option value="GEN-WARD-12">GEN-WARD-12 (General Medicine Male)</option>
+                <option value="ICU-BAY-01">ICU-BAY-01 (Cardio-Thoracic ICU)</option>
+                <option value="TRAUMA-RESUS-02">TRAUMA-RESUS-02 (Red Zone Trauma Bay)</option>
+                <option value="BURN-STERILE-03">BURN-STERILE-03 (Plastic & Burn Isolation)</option>
+                <option value="ER-CRIT-04">ER-CRIT-04 (Triage Crash Unit)</option>
+                <option value="OPD">OPD Consultation Only (No Bed Assigned)</option>
+              </select>
             </div>
           </div>
 
@@ -454,13 +479,13 @@ if (setBeds) {
             </div>
             <textarea
               rows={2}
-              placeholder="e.g. High fever for 3 days, cough..."
+              placeholder="e.g. High fever for 3 days, acute dry cough, fatigue..."
               value={symptoms}
               onChange={(e) => {
                 setSymptoms(e.target.value);
                 baseTextRef.current = e.target.value;
               }}
-              className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl font-medium text-gray-800"
+              className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl font-medium text-gray-800 focus:outline-none focus:border-emerald-600"
             />
           </div>
 
@@ -468,7 +493,7 @@ if (setBeds) {
           <div>
             <div className="flex items-center justify-between mb-1">
               <label className="text-[10px] font-bold text-gray-400 uppercase">
-                Doctor Case Notes
+                Doctor Case Notes / Diagnosis
               </label>
               <button
                 type="button"
@@ -485,13 +510,13 @@ if (setBeds) {
             </div>
             <textarea
               rows={2}
-              placeholder="e.g. Prescribed Paracetamol 650mg TDS, advise rest..."
+              placeholder="e.g. Prescribed Paracetamol 650mg TDS, IV Fluids, scheduled chest X-ray..."
               value={caseNotes}
               onChange={(e) => {
                 setCaseNotes(e.target.value);
                 baseTextRef.current = e.target.value;
               }}
-              className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl font-medium text-gray-800"
+              className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl font-medium text-gray-800 focus:outline-none focus:border-emerald-600"
             />
           </div>
 
@@ -500,14 +525,14 @@ if (setBeds) {
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 py-2.5 bg-gray-100 text-gray-700 font-bold rounded-xl cursor-pointer"
+              className="flex-1 py-2.5 bg-gray-100 text-gray-700 font-bold rounded-xl cursor-pointer hover:bg-gray-200 transition"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={showSuccess}
-              className="flex-1 py-2.5 bg-[#072a22] hover:bg-[#0c382e] text-white font-bold rounded-xl flex items-center justify-center gap-2 cursor-pointer shadow-md disabled:opacity-50"
+              className="flex-1 py-2.5 bg-[#072a22] hover:bg-[#0c382e] text-white font-bold rounded-xl flex items-center justify-center gap-2 cursor-pointer shadow-md disabled:opacity-50 transition"
             >
               <Save className="w-4 h-4 text-emerald-400" />
               <span>Save & Register Patient</span>
