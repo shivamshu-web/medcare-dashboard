@@ -18,11 +18,7 @@ import {
   Droplets,
   ShieldCheck,
   ChevronRight,
-  Filter,
   Eye,
-  Stethoscope,
-  Sparkles,
-  Building2,
 } from "lucide-react";
 import { useHospital } from "@/context/HospitalContext";
 
@@ -38,7 +34,6 @@ export default function PatientTableView({
   onOpenModal,
 }: PatientTableViewProps) {
   const context = useHospital() as any;
-  const patientsList = propPatients || context?.patients || [];
   const deletePatient = context?.deletePatient;
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -78,9 +73,26 @@ export default function PatientTableView({
     );
   };
 
+  // Hybrid Single Source of Truth: Merge Context with LocalStorage
+  const verifiedPatients = useMemo(() => {
+    let local: any[] = [];
+    if (typeof window !== "undefined") {
+      try {
+        local = JSON.parse(localStorage.getItem("medcare_patients_db") || "[]");
+      } catch (e) {}
+    }
+
+    const uniqueMap = new Map();
+    [...(context?.patients || []), ...local, ...(propPatients || [])].forEach((p) => {
+      if (p?.id) uniqueMap.set(p.id, p);
+    });
+
+    return Array.from(uniqueMap.values());
+  }, [context?.patients, propPatients]);
+
   // Filtered Patient List
   const filteredPatients = useMemo(() => {
-    return patientsList.filter((p: any) => {
+    return verifiedPatients.filter((p: any) => {
       const q = searchQuery.toLowerCase();
       const matchesQuery =
         (p.name && p.name.toLowerCase().includes(q)) ||
@@ -105,7 +117,7 @@ export default function PatientTableView({
 
       return matchesQuery && matchesStatus && matchesGender;
     });
-  }, [patientsList, searchQuery, selectedStatus, selectedGender]);
+  }, [verifiedPatients, searchQuery, selectedStatus, selectedGender]);
 
   // Handle Record Deletion
   const handleDelete = (e: React.MouseEvent, id: string, name: string) => {
@@ -114,17 +126,22 @@ export default function PatientTableView({
       if (deletePatient) {
         deletePatient(id);
       }
+      try {
+        const stored = JSON.parse(localStorage.getItem("medcare_patients_db") || "[]");
+        const filtered = stored.filter((p: any) => p.id !== id);
+        localStorage.setItem("medcare_patients_db", JSON.stringify(filtered));
+      } catch (err) {}
     }
   };
 
   // Metric calculation
-  const totalCount = patientsList.length;
-  const emergencyCount = patientsList.filter((p: any) => isEmergencyCase(p)).length;
-  const admittedCount = patientsList.filter(
-    (p: any) => (p.status === "Admitted" || (p.bedNumber && p.bedNumber !== "Discharged")) && !isEmergencyCase(p)
+  const totalCount = verifiedPatients.length;
+  const emergencyCount = verifiedPatients.filter((p: any) => isEmergencyCase(p)).length;
+  const admittedCount = verifiedPatients.filter(
+    (p: any) => (p.status === "Admitted" || (p.bedNumber && p.bedNumber !== "Discharged" && p.bedNumber !== "OPD")) && !isEmergencyCase(p)
   ).length;
-  const opdCount = patientsList.filter(
-    (p: any) => !p.bedNumber || p.bedNumber === "Discharged" || p.status === "OPD"
+  const opdCount = verifiedPatients.filter(
+    (p: any) => !p.bedNumber || p.bedNumber === "Discharged" || p.bedNumber === "OPD" || p.status === "OPD"
   ).length;
 
   return (
@@ -429,7 +446,7 @@ export default function PatientTableView({
 
                         {/* Allocated Bed */}
                         <td className="py-4 px-4">
-                          {patient.bedNumber && patient.bedNumber !== "Discharged" ? (
+                          {patient.bedNumber && patient.bedNumber !== "Discharged" && patient.bedNumber !== "OPD" ? (
                             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-black bg-emerald-50 text-emerald-900 border border-emerald-300 shadow-2xs">
                               <BedDouble className="w-3.5 h-3.5 text-emerald-700" />
                               {patient.bedNumber}
