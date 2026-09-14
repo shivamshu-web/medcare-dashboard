@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import Sidebar, { SettingsView, SupportGuideView } from "@/components/layout/Sidebar";
 import Header from "@/components/layout/Header";
 import PatientChart from "@/components/dashboard/PatientChart";
+import ClinicalAppointmentsWidget from "@/components/dashboard/ClinicalAppointmentsWidget";
 import CaseTakingModal from "@/components/case-taking/CaseTakingModal";
 import PatientProfileView from "@/components/dashboard/PatientProfileView";
 import VitalsCard from "@/components/VitalsCard";
@@ -694,13 +695,9 @@ function Dashboard() {
       </div>
 
       <CaseTakingModal
-        isOpen={isCaseModalOpen}
-        onClose={() => {
-          setIsCaseModalOpen(false);
-          refreshPatients();
-        }}
+      isOpen={isCaseModalOpen}
+      onClose={() => setIsCaseModalOpen(false)}
       />
-
       <EmergencyModal
         isOpen={isEmergencyModalOpen}
         onClose={() => setIsEmergencyModalOpen(false)}
