@@ -11,17 +11,24 @@ import {
   Search,
   CheckCircle2,
   AlertTriangle,
-  Zap,
-  Flame,
   Radio,
   Maximize2,
+  Clock,
+  Sparkles,
+  User,
 } from "lucide-react";
 
 // Live SVG ECG Telemetry Waveform Component
-function LiveECGTrace({ color = "#10b981", isCritical = false }: { color?: string; isCritical?: boolean }) {
+function LiveECGTrace({
+  color = "#10b981",
+  isCritical = false,
+}: {
+  color?: string;
+  isCritical?: boolean;
+}) {
   return (
-    <div className="relative w-full h-10 bg-[#06120e] rounded-lg overflow-hidden flex items-center border border-[#0e2a22]">
-      {/* Grid line backdrop */}
+    <div className="relative w-full h-11 bg-[#06120e] rounded-xl overflow-hidden flex items-center border border-[#0e2a22]">
+      {/* Oscilloscope Grid line backdrop */}
       <div
         className="absolute inset-0 opacity-15"
         style={{
@@ -31,10 +38,14 @@ function LiveECGTrace({ color = "#10b981", isCritical = false }: { color?: strin
         }}
       />
       {/* Animated Sweep Line */}
-      <div className="absolute top-0 bottom-0 w-8 bg-gradient-to-r from-transparent to-emerald-400/30 animate-pulse pointer-events-none" />
-      
-      {/* Oscilloscope SVG Waveform */}
-      <svg className="w-full h-8 stroke-current z-10" viewBox="0 0 300 40" preserveAspectRatio="none">
+      <div className="absolute top-0 bottom-0 w-10 bg-gradient-to-r from-transparent to-emerald-400/30 animate-pulse pointer-events-none" />
+
+      {/* Synthetic Waveform Path */}
+      <svg
+        className="w-full h-8 stroke-current z-10"
+        viewBox="0 0 300 40"
+        preserveAspectRatio="none"
+      >
         <path
           d={
             isCritical
@@ -43,21 +54,31 @@ function LiveECGTrace({ color = "#10b981", isCritical = false }: { color?: strin
           }
           fill="none"
           stroke={isCritical ? "#f43f5e" : color}
-          strokeWidth="2"
+          strokeWidth="2.2"
           strokeLinecap="round"
           strokeLinejoin="round"
           className="transition-all duration-300"
         />
       </svg>
-      <div className="absolute right-2 top-1 flex items-center gap-1 z-20">
-        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-        <span className="text-[9px] font-mono font-bold text-emerald-400">LEAD II</span>
+      <div className="absolute right-2 top-1.5 flex items-center gap-1 z-20">
+        <span
+          className={`w-1.5 h-1.5 rounded-full ${
+            isCritical ? "bg-rose-500 animate-ping" : "bg-emerald-400 animate-ping"
+          }`}
+        />
+        <span
+          className={`text-[9px] font-mono font-black ${
+            isCritical ? "text-rose-400" : "text-emerald-400"
+          }`}
+        >
+          LEAD II
+        </span>
       </div>
     </div>
   );
 }
 
-// Master Ward Bed Inventory
+// Master Ward Bed Inventory (Standardized Across Hospital)
 const BASE_WARDS = [
   { id: "B-101", bedNumber: "ICU-BAY-01", ward: "Cardio-Thoracic ICU", dept: "ICU" },
   { id: "B-102", bedNumber: "TRAUMA-RESUS-02", ward: "Red Zone Trauma Bay", dept: "Trauma" },
@@ -70,11 +91,11 @@ const BASE_WARDS = [
 ];
 
 export default function WardsView() {
-  const { patients, setPatients, refreshPatients } = useHospital() as any;
+  const { patients, setPatients, beds, setBeds, refreshPatients } = useHospital() as any;
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedDept, setSelectedDept] = useState("All");
 
-  // State to manage active bed in IcuTelemetryModal
+  // State to manage active bedside telemetry popup
   const [activeTelemetry, setActiveTelemetry] = useState<{
     isOpen: boolean;
     patientName: string;
@@ -85,7 +106,7 @@ export default function WardsView() {
     bedNumber: "",
   });
 
-  // Dynamic telemetry simulator state for live cardiac rhythm
+  // Dynamic telemetry pulse simulation for realistic rhythm
   const [telemetryPulse, setTelemetryPulse] = useState({ hr: 78, spo2: 98, map: 93 });
 
   useEffect(() => {
@@ -95,15 +116,16 @@ export default function WardsView() {
         spo2: Math.floor(97 + Math.random() * 3),
         map: Math.floor(90 + Math.random() * 6),
       });
-    }, 2800);
+    }, 2500);
     return () => clearInterval(timer);
   }, []);
 
-  // Sync beds directly with real database patients
+  // Sync beds directly with both Context beds & Patient cases database
   const unifiedBeds = useMemo(() => {
     return BASE_WARDS.map((base) => {
-      const assignedPatient = (patients || []).find((p: any) => {
-        const bedRef = (p.bedNumber || "").toLowerCase();
+      // 1. Match from patients array (DB)
+      const patientMatch = (patients || []).find((p: any) => {
+        const bedRef = String(p.bedNumber || "").trim().toLowerCase();
         return (
           bedRef === base.bedNumber.toLowerCase() ||
           bedRef === base.id.toLowerCase() ||
@@ -111,37 +133,103 @@ export default function WardsView() {
         );
       });
 
-      const isOccupied = !!assignedPatient;
+      // 2. Match from beds context state
+      const contextBed = (beds || []).find((b: any) => {
+        const bNum = String(b.bedNumber || b.id || "").trim().toLowerCase();
+        return bNum === base.bedNumber.toLowerCase() || bNum === base.id.toLowerCase();
+      });
+
+      const isOccupied =
+        (patientMatch && patientMatch.bedNumber !== "Discharged") ||
+        contextBed?.status === "Occupied";
+
+      const patientName =
+        patientMatch?.name ||
+        contextBed?.patientName ||
+        contextBed?.patient;
+
+      const condition =
+        patientMatch?.complaint ||
+        contextBed?.condition ||
+        "Under Inpatient Care";
+
+      const diagnosis =
+        patientMatch?.diagnosis ||
+        contextBed?.diagnosis ||
+        patientMatch?.treatment ||
+        "Clinical Admission";
+
       const isCritical =
         isOccupied &&
-        ((assignedPatient.complaint || "").toLowerCase().includes("code red") ||
-          (assignedPatient.diagnosis || "").toLowerCase().includes("arrest") ||
-          (assignedPatient.diagnosis || "").toLowerCase().includes("burn") ||
-          (assignedPatient.diagnosis || "").toLowerCase().includes("accident"));
+        ((condition || "").toLowerCase().includes("code red") ||
+          (diagnosis || "").toLowerCase().includes("arrest") ||
+          (diagnosis || "").toLowerCase().includes("burn") ||
+          (diagnosis || "").toLowerCase().includes("accident") ||
+          (diagnosis || "").toLowerCase().includes("critical"));
 
       return {
         ...base,
         status: isOccupied ? "Occupied" : "Available",
-        patient: assignedPatient,
+        patientName,
+        patient: patientMatch || (patientName ? { name: patientName, diagnosis, complaint: condition, id: patientMatch?.id } : null),
+        condition,
+        diagnosis,
         isCritical,
+        vitals: patientMatch?.vitals || contextBed?.vitals || "BP 120/80, HR 76, SpO2 98%",
       };
     });
-  }, [patients]);
+  }, [patients, beds]);
 
-  // Discharge patient: Deletes or clears bedNumber from actual Database/State
-  const handleDischarge = async (patientId: string, bedNumber: string) => {
-    if (!patientId) return;
-
-    try {
-      if (setPatients) {
-        setPatients((prev: any[]) =>
-          prev.map((p: any) => (p.id === patientId ? { ...p, bedNumber: "Discharged", status: "Discharged" } : p))
-        );
-      }
-      if (refreshPatients) refreshPatients();
-    } catch (err) {
-      console.error(err);
+  // Discharge patient: Clears bed assignment in both patients & beds state
+  const handleDischarge = async (bedNumber: string, patientId?: string) => {
+    // 1. Context beds state update
+    if (setBeds) {
+      setBeds((prevBeds: any[]) =>
+        (prevBeds || []).map((b: any) =>
+          b.bedNumber === bedNumber || b.id === bedNumber
+            ? {
+                ...b,
+                status: "Available",
+                patientName: undefined,
+                patient: undefined,
+                condition: undefined,
+                diagnosis: undefined,
+              }
+            : b
+        )
+      );
     }
+
+    // 2. Patients list update (Mark discharged)
+    if (setPatients) {
+      setPatients((prev: any[]) =>
+        (prev || []).map((p: any) => {
+          if (
+            (patientId && p.id === patientId) ||
+            p.bedNumber === bedNumber
+          ) {
+            return { ...p, bedNumber: "Discharged", status: "Discharged" };
+          }
+          return p;
+        })
+      );
+    }
+
+    // 3. LocalStorage persistence update
+    try {
+      const savedPatients = JSON.parse(localStorage.getItem("medcare_patients_db") || "[]");
+      const updated = savedPatients.map((p: any) => {
+        if (p.bedNumber === bedNumber || (patientId && p.id === patientId)) {
+          return { ...p, bedNumber: "Discharged", status: "Discharged" };
+        }
+        return p;
+      });
+      localStorage.setItem("medcare_patients_db", JSON.stringify(updated));
+    } catch (e) {
+      console.warn("Storage update skipped:", e);
+    }
+
+    if (refreshPatients) refreshPatients();
   };
 
   const occupiedCount = unifiedBeds.filter((b) => b.status === "Occupied").length;
@@ -154,7 +242,8 @@ export default function WardsView() {
     const matchesSearch =
       b.bedNumber.toLowerCase().includes(q) ||
       b.ward.toLowerCase().includes(q) ||
-      (b.patient && b.patient.name.toLowerCase().includes(q));
+      (b.patientName && b.patientName.toLowerCase().includes(q)) ||
+      (b.diagnosis && b.diagnosis.toLowerCase().includes(q));
     return matchesDept && matchesSearch;
   });
 
@@ -176,7 +265,7 @@ export default function WardsView() {
               </span>
             </div>
             <p className="text-xs text-emerald-200/70 mt-1">
-              Real-time physiological waveforms & verified Patient Case synchronization.
+              Direct telemetry sync between Emergency Triage (Code Red), OT Resus, and Inpatient Admissions.
             </p>
           </div>
 
@@ -204,7 +293,7 @@ export default function WardsView() {
         </div>
       </div>
 
-      {/* Filter Tabs */}
+      {/* Filter Tabs & Search Bar */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
         <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto pb-1 sm:pb-0">
           {["All", "ICU", "Trauma", "Burn", "Emergency", "General"].map((d) => (
@@ -226,10 +315,10 @@ export default function WardsView() {
           <Search className="w-4 h-4 text-gray-400 absolute left-3 top-2.5" />
           <input
             type="text"
-            placeholder="Search patient from Patient Cases..."
+            placeholder="Search bed, patient or diagnosis..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-3.5 py-2 bg-white border border-gray-200 rounded-xl text-xs text-gray-800 font-medium focus:outline-none focus:border-emerald-500"
+            className="w-full pl-9 pr-3.5 py-2 bg-white border border-gray-200 rounded-xl text-xs text-gray-800 font-medium focus:outline-none focus:border-emerald-500 shadow-2xs"
           />
         </div>
       </div>
@@ -243,7 +332,7 @@ export default function WardsView() {
           return (
             <div
               key={b.id}
-              className={`rounded-3xl border-2 transition duration-200 flex flex-col justify-between overflow-hidden shadow-xs ${
+              className={`rounded-3xl border-2 transition-all duration-200 flex flex-col justify-between overflow-hidden shadow-xs ${
                 isOccupied
                   ? b.isCritical
                     ? "bg-[#091512] text-white border-rose-500/80 ring-2 ring-rose-500/20"
@@ -252,7 +341,7 @@ export default function WardsView() {
               }`}
             >
               <div className="p-5 space-y-4">
-                {/* Header Strip */}
+                {/* Bed Header Strip */}
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2.5">
                     <div
@@ -267,10 +356,18 @@ export default function WardsView() {
                       <BedDouble className="w-5 h-5" />
                     </div>
                     <div>
-                      <h3 className={`text-sm font-black tracking-tight ${isOccupied && b.isCritical ? "text-white" : "text-gray-900"}`}>
+                      <h3
+                        className={`text-sm font-black tracking-tight ${
+                          isOccupied && b.isCritical ? "text-white" : "text-gray-900"
+                        }`}
+                      >
                         {b.bedNumber}
                       </h3>
-                      <p className={`text-[11px] font-semibold ${isOccupied && b.isCritical ? "text-gray-400" : "text-gray-500"}`}>
+                      <p
+                        className={`text-[11px] font-semibold ${
+                          isOccupied && b.isCritical ? "text-gray-400" : "text-gray-500"
+                        }`}
+                      >
                         {b.ward}
                       </p>
                     </div>
@@ -283,18 +380,18 @@ export default function WardsView() {
                         onClick={() =>
                           setActiveTelemetry({
                             isOpen: true,
-                            patientName: patient?.name || "ICU Patient",
+                            patientName: b.patientName || "ICU Patient",
                             bedNumber: b.bedNumber,
                           })
                         }
-                        className={`p-1.5 rounded-lg border transition cursor-pointer flex items-center gap-1 text-[10px] font-bold ${
+                        className={`p-1.5 rounded-xl border transition cursor-pointer flex items-center gap-1 text-[10px] font-bold ${
                           b.isCritical
                             ? "bg-rose-950/80 border-rose-500 text-rose-300 hover:bg-rose-900"
                             : "bg-emerald-950/80 border-emerald-500 text-emerald-300 hover:bg-emerald-900"
                         }`}
-                        title="Open ICU Telemetry Monitor"
+                        title="Open Bedside Audio Telemetry Monitor"
                       >
-                        <Maximize2 className="w-3 h-3" />
+                        <Maximize2 className="w-3.5 h-3.5" />
                       </button>
                     )}
 
@@ -312,39 +409,52 @@ export default function WardsView() {
                   </div>
                 </div>
 
-                {/* Patient Case Sync Info */}
-                {isOccupied && patient ? (
+                {/* Patient Occupancy & Waveform Area */}
+                {isOccupied ? (
                   <div className="space-y-3">
-                    {/* Patient identity card synced with DB */}
+                    {/* Patient Information Card */}
                     <div
                       className={`p-3.5 rounded-2xl border ${
-                        b.isCritical ? "bg-[#0d221c] border-emerald-900/60" : "bg-gray-50 border-gray-200"
+                        b.isCritical
+                          ? "bg-[#0d221c] border-emerald-900/60"
+                          : "bg-gray-50 border-gray-200"
                       }`}
                     >
                       <div className="flex items-center justify-between">
-                        <h4 className={`text-xs font-black ${b.isCritical ? "text-emerald-300" : "text-gray-900"}`}>
-                          {patient.name}
-                        </h4>
+                        <div className="flex items-center gap-2">
+                          <User className={`w-3.5 h-3.5 ${b.isCritical ? "text-rose-400" : "text-gray-700"}`} />
+                          <h4
+                            className={`text-xs font-black truncate max-w-[180px] ${
+                              b.isCritical ? "text-emerald-300" : "text-gray-900"
+                            }`}
+                          >
+                            {b.patientName || "Emergency Patient"}
+                          </h4>
+                        </div>
                         <span className="text-[10px] font-mono text-gray-400">
-                          {patient.age ? `${patient.age} Yrs` : "Adult"} • {patient.gender || "Emergency"}
+                          {patient?.age ? `${patient.age} Yrs` : "Adult"}
                         </span>
                       </div>
 
-                      <p className={`text-[11px] mt-1 font-bold ${b.isCritical ? "text-rose-400" : "text-amber-700"}`}>
-                        Dx: {patient.diagnosis || patient.complaint || "Acute Clinical Condition"}
+                      <p
+                        className={`text-[11px] mt-1.5 font-bold truncate ${
+                          b.isCritical ? "text-rose-400" : "text-amber-700"
+                        }`}
+                      >
+                        Dx: {b.diagnosis || b.condition}
                       </p>
 
-                      <p className="text-[10px] text-gray-400 font-mono mt-0.5">
-                        ABHA: {patient.abhaId || "Verified Case Record"}
-                      </p>
+                      <div className="flex items-center justify-between text-[10px] text-gray-400 font-mono mt-1 pt-1 border-t border-gray-200/40">
+                        <span>{b.vitals}</span>
+                      </div>
                     </div>
 
-                    {/* Medical Telemetry Waveform (Clickable to launch Bedside Monitor) */}
+                    {/* Continuous ECG Oscilloscope Waveform (Click to Launch Audio Monitor) */}
                     <div
                       onClick={() =>
                         setActiveTelemetry({
                           isOpen: true,
-                          patientName: patient?.name || "ICU Patient",
+                          patientName: b.patientName || "ICU Patient",
                           bedNumber: b.bedNumber,
                         })
                       }
@@ -352,7 +462,11 @@ export default function WardsView() {
                       title="Click to launch Bedside Audio Telemetry"
                     >
                       <div className="flex items-center justify-between text-[10px] font-bold">
-                        <span className={`flex items-center gap-1 group-hover:underline ${b.isCritical ? "text-emerald-400" : "text-gray-600"}`}>
+                        <span
+                          className={`flex items-center gap-1 group-hover:underline ${
+                            b.isCritical ? "text-emerald-400" : "text-gray-600"
+                          }`}
+                        >
                           <Activity className="w-3.5 h-3.5 text-emerald-500 animate-bounce" /> Live Continuous Waveform
                         </span>
                         <span className="font-mono text-emerald-400">
@@ -367,13 +481,13 @@ export default function WardsView() {
                     <CheckCircle2 className="w-7 h-7 text-emerald-600 mb-1" />
                     <p className="text-xs font-bold text-gray-800">Bed Clean & Ready</p>
                     <span className="text-[10px] text-gray-400">
-                      Telemetry standby • Assign via Code Red or Patient Cases
+                      Oxygen & Defib Calibrated • Auto-assign via Code Red / Intake
                     </span>
                   </div>
                 )}
               </div>
 
-              {/* Card Footer Action */}
+              {/* Card Footer Actions */}
               <div
                 className={`p-4 border-t flex items-center justify-between ${
                   isOccupied && b.isCritical
@@ -391,7 +505,7 @@ export default function WardsView() {
                       onClick={() =>
                         setActiveTelemetry({
                           isOpen: true,
-                          patientName: patient?.name || "ICU Patient",
+                          patientName: b.patientName || "ICU Patient",
                           bedNumber: b.bedNumber,
                         })
                       }
@@ -401,9 +515,9 @@ export default function WardsView() {
                     </button>
                   )}
 
-                  {isOccupied && patient && (
+                  {isOccupied && (
                     <button
-                      onClick={() => handleDischarge(patient.id, b.bedNumber)}
+                      onClick={() => handleDischarge(b.bedNumber, patient?.id)}
                       className="text-[11px] font-black text-rose-500 hover:text-rose-400 hover:underline cursor-pointer flex items-center gap-1 transition"
                     >
                       <UserCheck className="w-3.5 h-3.5" /> Discharge →
@@ -420,7 +534,9 @@ export default function WardsView() {
       {activeTelemetry.isOpen && (
         <IcuTelemetryModal
           isOpen={activeTelemetry.isOpen}
-          onClose={() => setActiveTelemetry({ isOpen: false, patientName: "", bedNumber: "" })}
+          onClose={() =>
+            setActiveTelemetry({ isOpen: false, patientName: "", bedNumber: "" })
+          }
           patientName={activeTelemetry.patientName}
           bedNumber={activeTelemetry.bedNumber}
         />

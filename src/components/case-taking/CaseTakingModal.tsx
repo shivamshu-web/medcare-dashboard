@@ -12,6 +12,7 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import { useHospital } from "@/context/HospitalContext";
+const { setPatients, setBeds, refreshPatients } = useHospital() as any;
 
 interface CaseTakingModalProps {
   isOpen: boolean;
@@ -141,28 +142,47 @@ export default function CaseTakingModal({ isOpen, onClose }: CaseTakingModalProp
 
     const uniqueId = `PAT-${Math.floor(1000 + Math.random() * 9000)}`;
     const finalVitals = `BP ${bpSystolic}/${bpDiastolic}, HR ${pulse}, SpO2 ${spO2}%, Temp ${temperature}°F`;
-    
-    const newPatient = {
-      id: uniqueId,
-      name: patientName.trim(),
-      age: Number(age) || 35,
-      gender: gender || "Male",
-      contact: "+91 98765 43210",
-      bloodGroup: "B+",
-      abhaId:
-        abhaId.trim() ||
-        `91-${Math.floor(1000 + Math.random() * 9000)}-${Math.floor(
-          1000 + Math.random() * 9000
-        )}-${Math.floor(1000 + Math.random() * 9000)}`,
-      complaint: symptoms.trim() || "Routine General Health Consultation",
-      diagnosis: caseNotes.trim() || "OPD Clinical Consultation",
-      vitals: finalVitals,
-      treatment: caseNotes.trim() || "Vitals within normal baseline. Scheduled follow-up.",
-      bedNumber: "OPD",
-      status: "OPD",
-      createdAt: new Date().toISOString(),
-    };
+    // CaseTakingModal.tsx ke handleSubmit ke andar:
+   
+const newPatient = {
+  id: uniqueId,
+  name: patientName.trim(),
+  age: Number(age) || 35,
+  gender: gender || "Male",
+  contact: "+91 98765 43210",
+  bloodGroup: "B+",
+  abhaId: abhaId.trim() || `91-${Math.floor(1000 + Math.random() * 9000)}-${Math.floor(1000 + Math.random() * 9000)}-${Math.floor(1000 + Math.random() * 9000)}`,
+  complaint: symptoms.trim() || "Routine General Health Consultation",
+  diagnosis: caseNotes.trim() || "OPD Clinical Consultation",
+  vitals: finalVitals,
+  treatment: caseNotes.trim() || "Vitals within normal baseline.",
+  bedNumber: "GEN-WARD-11", // Default ward allocation
+  status: "Admitted",
+  createdAt: new Date().toISOString(),
+};
 
+// State update
+if (setPatients) {
+  setPatients((prev: any[]) => [newPatient, ...(prev || [])]);
+}
+
+// Bed occupy update (safe check ke sath)
+if (setBeds) {
+  setBeds((prevBeds: any[]) =>
+    (prevBeds || []).map((b: any) =>
+      b.bedNumber === "GEN-WARD-11" || b.id === "GEN-WARD-11"
+        ? {
+            ...b,
+            status: "Occupied",
+            patientName: patientName.trim(),
+            patient: patientName.trim(),
+            condition: "Stable",
+            diagnosis: caseNotes.trim() || "OPD Clinical Consultation",
+          }
+        : b
+    )
+  );
+}
     // 1. HospitalContext + LocalStorage mein guaranteed persistent save
     if (setPatients) {
       setPatients((prev: any[]) => [newPatient, ...(prev || [])]);
