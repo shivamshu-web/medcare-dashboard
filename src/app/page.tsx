@@ -592,8 +592,9 @@ function Dashboard() {
                       </button>
                     </div>
                   </div>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                  
 
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div className="bg-white p-5 rounded-3xl border border-gray-200/70 shadow-xs flex flex-col justify-between">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-bold text-gray-700">Financial Revenue</span>
