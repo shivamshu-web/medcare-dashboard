@@ -13,9 +13,9 @@ import {
   AlertTriangle,
   Radio,
   Maximize2,
-  Clock,
-  Sparkles,
   User,
+  Clock,
+  ShieldCheck,
 } from "lucide-react";
 
 // Live SVG ECG Telemetry Waveform Component
@@ -28,7 +28,7 @@ function LiveECGTrace({
 }) {
   return (
     <div className="relative w-full h-11 bg-[#06120e] rounded-xl overflow-hidden flex items-center border border-[#0e2a22]">
-      {/* Oscilloscope Grid line backdrop */}
+      {/* Grid line backdrop */}
       <div
         className="absolute inset-0 opacity-15"
         style={{
@@ -78,7 +78,7 @@ function LiveECGTrace({
   );
 }
 
-// Master Ward Bed Inventory (Standardized Across Hospital)
+// 8 Standard Bed Units Across the Hospital
 const BASE_WARDS = [
   { id: "B-101", bedNumber: "ICU-BAY-01", ward: "Cardio-Thoracic ICU", dept: "ICU" },
   { id: "B-102", bedNumber: "TRAUMA-RESUS-02", ward: "Red Zone Trauma Bay", dept: "Trauma" },
@@ -91,11 +91,11 @@ const BASE_WARDS = [
 ];
 
 export default function WardsView() {
-  const { patients, setPatients, beds, setBeds, refreshPatients } = useHospital() as any;
+  const { patients, setPatients, setBeds, refreshPatients } = useHospital() as any;
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedDept, setSelectedDept] = useState("All");
 
-  // State to manage active bedside telemetry popup
+  // State to launch IcuTelemetryModal
   const [activeTelemetry, setActiveTelemetry] = useState<{
     isOpen: boolean;
     patientName: string;
@@ -106,7 +106,7 @@ export default function WardsView() {
     bedNumber: "",
   });
 
-  // Dynamic telemetry pulse simulation for realistic rhythm
+  // Simulated live cardiac rhythm fluctuations
   const [telemetryPulse, setTelemetryPulse] = useState({ hr: 78, spo2: 98, map: 93 });
 
   useEffect(() => {
@@ -120,69 +120,75 @@ export default function WardsView() {
     return () => clearInterval(timer);
   }, []);
 
-  // Sync beds directly with both Context beds & Patient cases database
+  // 100% Dynamic Synchronization with Patients Database (Context + LocalStorage)
   const unifiedBeds = useMemo(() => {
+    let localPatients: any[] = [];
+    if (typeof window !== "undefined") {
+      try {
+        localPatients = JSON.parse(localStorage.getItem("medcare_patients_db") || "[]");
+      } catch (e) {}
+    }
+
+    // Merge Context and LocalStorage patients uniquely by id
+    const uniqueMap = new Map();
+    [...(patients || []), ...localPatients].forEach((p: any) => {
+      if (p?.id) uniqueMap.set(p.id, p);
+    });
+    const allVerifiedPatients = Array.from(uniqueMap.values());
+
     return BASE_WARDS.map((base) => {
-      // 1. Match from patients array (DB)
-      const patientMatch = (patients || []).find((p: any) => {
-        const bedRef = String(p.bedNumber || "").trim().toLowerCase();
+      // Find patient allocated to this specific bedNumber
+      const assignedPatient = allVerifiedPatients.find((p: any) => {
+        const bedVal = String(p.bedNumber || "").trim().toLowerCase();
         return (
-          bedRef === base.bedNumber.toLowerCase() ||
-          bedRef === base.id.toLowerCase() ||
-          (p.complaint && p.complaint.toLowerCase().includes(base.bedNumber.toLowerCase()))
+          (bedVal === base.bedNumber.toLowerCase() || bedVal === base.id.toLowerCase()) &&
+          p.status !== "Discharged" &&
+          p.bedNumber !== "Discharged"
         );
       });
 
-      // 2. Match from beds context state
-      const contextBed = (beds || []).find((b: any) => {
-        const bNum = String(b.bedNumber || b.id || "").trim().toLowerCase();
-        return bNum === base.bedNumber.toLowerCase() || bNum === base.id.toLowerCase();
-      });
+      const isOccupied = !!assignedPatient;
 
-      const isOccupied =
-        (patientMatch && patientMatch.bedNumber !== "Discharged") ||
-        contextBed?.status === "Occupied";
-
-      const patientName =
-        patientMatch?.name ||
-        contextBed?.patientName ||
-        contextBed?.patient;
-
-      const condition =
-        patientMatch?.complaint ||
-        contextBed?.condition ||
-        "Under Inpatient Care";
-
-      const diagnosis =
-        patientMatch?.diagnosis ||
-        contextBed?.diagnosis ||
-        patientMatch?.treatment ||
-        "Clinical Admission";
+      const condition = assignedPatient?.complaint || "Routine Observation";
+      const diagnosis = assignedPatient?.diagnosis || "Inpatient Care";
 
       const isCritical =
         isOccupied &&
         ((condition || "").toLowerCase().includes("code red") ||
           (diagnosis || "").toLowerCase().includes("arrest") ||
           (diagnosis || "").toLowerCase().includes("burn") ||
+          (diagnosis || "").toLowerCase().includes("stemi") ||
           (diagnosis || "").toLowerCase().includes("accident") ||
-          (diagnosis || "").toLowerCase().includes("critical"));
+          (condition || "").toLowerCase().includes("critical"));
 
       return {
         ...base,
         status: isOccupied ? "Occupied" : "Available",
-        patientName,
-        patient: patientMatch || (patientName ? { name: patientName, diagnosis, complaint: condition, id: patientMatch?.id } : null),
+        patientName: assignedPatient?.name,
+        patient: assignedPatient || null,
         condition,
         diagnosis,
         isCritical,
-        vitals: patientMatch?.vitals || contextBed?.vitals || "BP 120/80, HR 76, SpO2 98%",
+        vitals: assignedPatient?.vitals || "BP 120/80, HR 76, SpO2 98%",
       };
     });
-  }, [patients, beds]);
+  }, [patients]);
 
-  // Discharge patient: Clears bed assignment in both patients & beds state
+  // Discharge patient: releases bed assignment cleanly
   const handleDischarge = async (bedNumber: string, patientId?: string) => {
-    // 1. Context beds state update
+    // 1. Update Context Patients
+    if (setPatients) {
+      setPatients((prev: any[]) =>
+        (prev || []).map((p: any) => {
+          if ((patientId && p.id === patientId) || p.bedNumber === bedNumber) {
+            return { ...p, bedNumber: "Discharged", status: "Discharged" };
+          }
+          return p;
+        })
+      );
+    }
+
+    // 2. Update Context Beds
     if (setBeds) {
       setBeds((prevBeds: any[]) =>
         (prevBeds || []).map((b: any) =>
@@ -200,33 +206,18 @@ export default function WardsView() {
       );
     }
 
-    // 2. Patients list update (Mark discharged)
-    if (setPatients) {
-      setPatients((prev: any[]) =>
-        (prev || []).map((p: any) => {
-          if (
-            (patientId && p.id === patientId) ||
-            p.bedNumber === bedNumber
-          ) {
-            return { ...p, bedNumber: "Discharged", status: "Discharged" };
-          }
-          return p;
-        })
-      );
-    }
-
-    // 3. LocalStorage persistence update
+    // 3. Update LocalStorage directly
     try {
-      const savedPatients = JSON.parse(localStorage.getItem("medcare_patients_db") || "[]");
-      const updated = savedPatients.map((p: any) => {
-        if (p.bedNumber === bedNumber || (patientId && p.id === patientId)) {
+      const stored = JSON.parse(localStorage.getItem("medcare_patients_db") || "[]");
+      const updated = stored.map((p: any) => {
+        if ((patientId && p.id === patientId) || p.bedNumber === bedNumber) {
           return { ...p, bedNumber: "Discharged", status: "Discharged" };
         }
         return p;
       });
       localStorage.setItem("medcare_patients_db", JSON.stringify(updated));
     } catch (e) {
-      console.warn("Storage update skipped:", e);
+      console.warn(e);
     }
 
     if (refreshPatients) refreshPatients();
@@ -249,7 +240,7 @@ export default function WardsView() {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-200 font-sans">
-      {/* Clinical Telemetry Banner */}
+      {/* Top Clinical Telemetry Console Header */}
       <div className="bg-[#051a14] text-white p-6 rounded-3xl border border-emerald-900/50 shadow-xl relative overflow-hidden">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 relative z-10">
           <div>
@@ -449,7 +440,7 @@ export default function WardsView() {
                       </div>
                     </div>
 
-                    {/* Continuous ECG Oscilloscope Waveform (Click to Launch Audio Monitor) */}
+                    {/* Continuous ECG Oscilloscope Waveform (Clickable to Launch Audio Monitor) */}
                     <div
                       onClick={() =>
                         setActiveTelemetry({
