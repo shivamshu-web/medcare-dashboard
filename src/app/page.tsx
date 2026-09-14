@@ -625,7 +625,7 @@ function Dashboard() {
 
                   <LiveHospitalMetrics />
 
-                    <div className="bg-white p-5 rounded-3xl border border-gray-200/70 shadow-xs flex flex-col justify-between">
+                    <div className="hidden bg-white p-5 rounded-3xl border border-gray-200/70 shadow-xs flex flex-col justify-between">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-bold text-gray-700">
                           Database Records ({patients.length})
