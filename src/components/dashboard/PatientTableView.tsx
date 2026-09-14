@@ -1,24 +1,35 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
-import { useHospital } from "@/context/HospitalContext";
 import {
+  User,
+  Calendar,
+  Clock,
+  Trash2,
+  AlertTriangle,
+  Siren,
   Search,
-  Activity,
-  Heart,
+  Plus,
+  BedDouble,
   FileText,
+  Activity,
+  HeartPulse,
+  Phone,
+  Droplets,
+  ShieldCheck,
+  ChevronRight,
+  Filter,
   Eye,
   Stethoscope,
-  Printer,
-  X,
-  Filter,
-  Plus,
+  Sparkles,
+  Building2,
 } from "lucide-react";
+import { useHospital } from "@/context/HospitalContext";
 
 interface PatientTableViewProps {
   patients?: any[];
-  onSelectPatient?: (pt: any) => void;
-  onOpenModal?: () => void;
+  onSelectPatient: (patient: any) => void;
+  onOpenModal: () => void;
 }
 
 export default function PatientTableView({
@@ -26,311 +37,523 @@ export default function PatientTableView({
   onSelectPatient,
   onOpenModal,
 }: PatientTableViewProps) {
-  const hospital = useHospital() as any;
+  const context = useHospital() as any;
+  const patientsList = propPatients || context?.patients || [];
+  const deletePatient = context?.deletePatient;
 
-  // Context ya Prop dono se safely data lega
-  const activePatients: any[] = propPatients || hospital?.patients || [];
-
-  const [selectedPatient, setSelectedPatient] = useState<any | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [genderFilter, setGenderFilter] = useState("All");
+  const [selectedStatus, setSelectedStatus] = useState<string>("All");
+  const [selectedGender, setSelectedGender] = useState<string>("All");
+  const [viewMode, setViewMode] = useState<"Table" | "Cards">("Table");
 
-  // Real-time Search by Name, ABHA ID & Symptoms
+  // Format Date & Time safely
+  const formatDateTime = (dateStr?: string) => {
+    if (!dateStr) {
+      const now = new Date();
+      return {
+        date: now.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }),
+        time: now.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }),
+      };
+    }
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) {
+      return { date: "Today", time: "Recent" };
+    }
+    return {
+      date: d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }),
+      time: d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }),
+    };
+  };
+
+  // Helper check for Code Red / Critical Emergency
+  const isEmergencyCase = (p: any) => {
+    const text = `${p.complaint || ""} ${p.diagnosis || ""} ${p.status || ""}`.toLowerCase();
+    return (
+      text.includes("code red") ||
+      text.includes("critical") ||
+      text.includes("arrest") ||
+      text.includes("trauma") ||
+      text.includes("burn") ||
+      text.includes("accident")
+    );
+  };
+
+  // Filtered Patient List
   const filteredPatients = useMemo(() => {
-    return activePatients.filter((pt) => {
-      const q = searchQuery.toLowerCase().trim();
-      const matchesName = (pt.name || "").toLowerCase().includes(q);
-      const matchesAbha = (pt.abhaId || "").toLowerCase().includes(q);
-      const matchesSymptoms = (pt.symptoms || "").toLowerCase().includes(q);
-      const matchesQuery = !q || matchesName || matchesAbha || matchesSymptoms;
+    return patientsList.filter((p: any) => {
+      const q = searchQuery.toLowerCase();
+      const matchesQuery =
+        (p.name && p.name.toLowerCase().includes(q)) ||
+        (p.abhaId && p.abhaId.toLowerCase().includes(q)) ||
+        (p.diagnosis && p.diagnosis.toLowerCase().includes(q)) ||
+        (p.complaint && p.complaint.toLowerCase().includes(q)) ||
+        (p.bedNumber && p.bedNumber.toLowerCase().includes(q)) ||
+        (p.contact && p.contact.toLowerCase().includes(q));
 
-      const matchesGender =
-        genderFilter === "All" ||
-        (pt.gender || "").toLowerCase() === genderFilter.toLowerCase();
+      const isEmergency = isEmergencyCase(p);
 
-      return matchesQuery && matchesGender;
+      let matchesStatus = true;
+      if (selectedStatus === "Emergency") matchesStatus = isEmergency;
+      else if (selectedStatus === "Admitted") matchesStatus = p.status === "Admitted" && !isEmergency;
+      else if (selectedStatus === "OPD") matchesStatus = p.status === "OPD" || (!p.bedNumber && !isEmergency);
+      else if (selectedStatus === "Discharged") matchesStatus = p.status === "Discharged" || p.bedNumber === "Discharged";
+
+      let matchesGender = true;
+      if (selectedGender !== "All") {
+        matchesGender = (p.gender || "").toLowerCase() === selectedGender.toLowerCase();
+      }
+
+      return matchesQuery && matchesStatus && matchesGender;
     });
-  }, [activePatients, searchQuery, genderFilter]);
+  }, [patientsList, searchQuery, selectedStatus, selectedGender]);
 
-  const handleInspect = (pt: any) => {
-    if (onSelectPatient) {
-      onSelectPatient(pt);
-    } else {
-      setSelectedPatient(pt);
+  // Handle Record Deletion
+  const handleDelete = (e: React.MouseEvent, id: string, name: string) => {
+    e.stopPropagation();
+    if (window.confirm(`Are you sure you want to permanently remove case record for "${name}"?`)) {
+      if (deletePatient) {
+        deletePatient(id);
+      }
     }
   };
 
+  // Metric calculation
+  const totalCount = patientsList.length;
+  const emergencyCount = patientsList.filter((p: any) => isEmergencyCase(p)).length;
+  const admittedCount = patientsList.filter(
+    (p: any) => (p.status === "Admitted" || (p.bedNumber && p.bedNumber !== "Discharged")) && !isEmergencyCase(p)
+  ).length;
+  const opdCount = patientsList.filter(
+    (p: any) => !p.bedNumber || p.bedNumber === "Discharged" || p.status === "OPD"
+  ).length;
+
   return (
-    <div className="bg-white rounded-3xl p-6 border border-gray-100 shadow-sm space-y-4">
-      {/* Header & Search Bar */}
-      <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 pb-3 border-b border-gray-100">
-        <div>
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-xl bg-[#072a22] text-emerald-400 flex items-center justify-center font-bold">
-              <Stethoscope className="w-4 h-4" />
-            </div>
-            <h3 className="text-base font-black text-gray-800">
-              Clinical Case Registry & OPD Records
-            </h3>
-          </div>
-          <p className="text-xs text-gray-400 mt-0.5">
-            Total Cases: <b className="text-emerald-700">{activePatients.length} Registered</b> • Filtered:{" "}
-            <b className="text-gray-700">{filteredPatients.length}</b>
-          </p>
-        </div>
-
-        {/* Search, Filter & New Intake */}
-        <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto">
-          {/* Live Search Box */}
-          <div className="relative flex-1 sm:w-64">
-            <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              placeholder="Search patient name, ABHA..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-8 py-2 bg-gray-50 hover:bg-gray-100/80 focus:bg-white border border-gray-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-600 transition"
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery("")}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 cursor-pointer"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-
-          {/* Gender Filter */}
-          <div className="flex items-center gap-1 bg-gray-50 border border-gray-200 rounded-xl p-1 text-xs">
-            <Filter className="w-3.5 h-3.5 text-gray-400 ml-1" />
-            {["All", "Male", "Female"].map((g) => (
-              <button
-                key={g}
-                type="button"
-                onClick={() => setGenderFilter(g)}
-                className={`px-2.5 py-1 rounded-lg font-bold text-[10px] transition cursor-pointer ${
-                  genderFilter === g
-                    ? "bg-[#072a22] text-white shadow-xs"
-                    : "text-gray-500 hover:text-gray-800"
-                }`}
-              >
-                {g}
-              </button>
-            ))}
-          </div>
-
-          {/* Open Intake Button */}
-          {onOpenModal && (
-            <button
-              type="button"
-              onClick={onOpenModal}
-              className="px-3 py-2 rounded-xl bg-[#072a22] text-emerald-300 hover:bg-emerald-950 font-bold text-xs flex items-center gap-1.5 shadow-sm transition cursor-pointer"
-            >
-              <Plus className="w-4 h-4 text-emerald-400" />
-              <span>New Intake</span>
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Main Table */}
-      <div className="overflow-x-auto">
-        <table className="w-full text-left text-xs">
-          <thead>
-            <tr className="border-b border-gray-100 text-[11px] font-bold text-gray-400 uppercase tracking-wider bg-gray-50/50">
-              <th className="py-3 px-4 rounded-l-xl">Patient Details</th>
-              <th className="py-3 px-3">ABHA Health ID</th>
-              <th className="py-3 px-3">Vitals (BP / Pulse / Temp)</th>
-              <th className="py-3 px-3">Chief Symptoms & Diagnosis</th>
-              <th className="py-3 px-3">Physician Notes</th>
-              <th className="py-3 px-4 text-right rounded-r-xl">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100 font-medium">
-            {filteredPatients.length === 0 ? (
-              <tr>
-                <td colSpan={6} className="py-12 text-center text-gray-400">
-                  <FileText className="w-8 h-8 mx-auto mb-2 text-gray-300 opacity-60" />
-                  {searchQuery
-                    ? `No patient case matched "${searchQuery}"`
-                    : "No patient records found."}
-                </td>
-              </tr>
-            ) : (
-              filteredPatients.map((pt: any) => (
-                <tr key={pt.id} className="hover:bg-emerald-50/40 transition group">
-                  <td className="py-3 px-4 text-gray-800">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#072a22] to-emerald-800 text-emerald-300 flex items-center justify-center font-bold text-xs">
-                        {pt.name?.charAt(0) || "P"}
-                      </div>
-                      <div>
-                        <div className="font-bold text-gray-900 group-hover:text-emerald-950">
-                          {pt.name}
-                        </div>
-                        <div className="text-[10px] text-gray-400">
-                          {pt.age || 30} Yrs • {pt.gender || "Male"} •{" "}
-                          <span className="font-mono text-gray-500">{pt.id}</span>
-                        </div>
-                      </div>
-                    </div>
-                  </td>
-
-                  <td className="py-3 px-3 font-mono font-bold text-emerald-900">
-                    <span className="px-2 py-1 bg-emerald-50 border border-emerald-100 rounded-lg text-[11px]">
-                      {pt.abhaId || "91-0000-0000-0000"}
-                    </span>
-                  </td>
-
-                  <td className="py-3 px-3">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="px-2 py-0.5 rounded-md bg-gray-100 font-mono font-bold text-gray-800 text-[10px]">
-                        BP: {pt.bp || "120/80"}
-                      </span>
-                      <span className="px-2 py-0.5 rounded-md bg-rose-50 text-rose-600 font-mono font-bold text-[10px] flex items-center gap-1">
-                        <Heart className="w-2.5 h-2.5 fill-rose-500" />
-                        {pt.pulse || 72} bpm
-                      </span>
-                      <span className="px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-700 font-mono text-[10px]">
-                        {pt.temperature || "98.6"}°F
-                      </span>
-                    </div>
-                  </td>
-
-                  <td className="py-3 px-3 max-w-xs">
-                    <p className="text-gray-700 font-semibold line-clamp-2 leading-relaxed">
-                      {pt.symptoms || "Routine OPD Consultation"}
-                    </p>
-                  </td>
-
-                  <td className="py-3 px-3 max-w-xs">
-                    <p className="text-gray-500 text-[11px] line-clamp-2 italic">
-                      {pt.caseNotes || "Routine examination complete."}
-                    </p>
-                  </td>
-
-                  <td className="py-3 px-4 text-right">
-                    <button
-                      type="button"
-                      onClick={() => handleInspect(pt)}
-                      className="px-3 py-1.5 rounded-xl bg-[#072a22] text-white hover:bg-emerald-900 font-bold text-[11px] flex items-center gap-1 shadow-xs transition cursor-pointer ml-auto"
-                    >
-                      <Eye className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>Inspect EHR</span>
-                    </button>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Slide-over Inspection Sheet Modal */}
-      {selectedPatient && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
-          <div className="bg-white w-full max-w-2xl rounded-3xl p-6 shadow-2xl space-y-5 border border-gray-100 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-[#072a22] text-emerald-400 flex items-center justify-center font-bold">
-                  <FileText className="w-5 h-5" />
-                </div>
-                <div>
-                  <h4 className="text-base font-black text-gray-900">
-                    Clinical Case Inspection
-                  </h4>
-                  <p className="text-[11px] text-gray-400">
-                    ABDM Record ID:{" "}
-                    <span className="font-mono text-emerald-800 font-bold">
-                      {selectedPatient.id}
-                    </span>
-                  </p>
-                </div>
+    <div className="space-y-6 animate-in fade-in duration-200 font-sans">
+      {/* Top Clinical Header & Metric Counters */}
+      <div className="bg-white p-6 rounded-3xl border border-gray-200/80 shadow-xs">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-6 border-b border-gray-100">
+          <div>
+            <div className="flex items-center gap-2.5">
+              <div className="p-2.5 bg-emerald-600 text-white rounded-2xl shadow-xs">
+                <FileText className="w-5 h-5" />
               </div>
-              <button
-                onClick={() => setSelectedPatient(null)}
-                className="p-1.5 hover:bg-gray-100 rounded-full text-gray-400 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="p-4 bg-emerald-50/60 rounded-2xl border border-emerald-100 flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h5 className="font-bold text-gray-900 text-sm">{selectedPatient.name}</h5>
-                <p className="text-xs text-gray-600">
-                  {selectedPatient.age} Years • {selectedPatient.gender} • ABHA:{" "}
-                  <b className="font-mono text-emerald-900">{selectedPatient.abhaId}</b>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-xl font-black text-gray-900 tracking-tight">
+                    Central Inpatient & Clinical Cases Repository
+                  </h1>
+                  <span className="bg-emerald-100 text-emerald-800 text-[10px] font-black px-2.5 py-0.5 rounded-md uppercase tracking-wider">
+                    ABHA / ABDM Linked
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Synchronized electronic health records (EHR) with verified Ward Bed allocations, diagnostic logs, and continuous timestamps.
                 </p>
               </div>
-              <span className="px-3 py-1 bg-white rounded-xl border border-emerald-200 text-emerald-800 text-xs font-bold">
-                Active Record
-              </span>
-            </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-              <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
-                <span className="text-[10px] text-gray-400 block">Blood Pressure</span>
-                <span className="font-bold text-gray-900 text-xs font-mono">
-                  {selectedPatient.bp || "120/80"} mmHg
-                </span>
-              </div>
-              <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
-                <span className="text-[10px] text-gray-400 block">Pulse Rate</span>
-                <span className="font-bold text-rose-600 text-xs font-mono">
-                  {selectedPatient.pulse || 72} BPM
-                </span>
-              </div>
-              <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
-                <span className="text-[10px] text-gray-400 block">Temperature</span>
-                <span className="font-bold text-gray-900 text-xs font-mono">
-                  {selectedPatient.temperature || "98.6"} °F
-                </span>
-              </div>
-              <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
-                <span className="text-[10px] text-gray-400 block">Status</span>
-                <span className="font-bold text-emerald-700 text-xs">Synchronized</span>
-              </div>
-            </div>
-
-            <div className="space-y-1">
-              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
-                Chief Symptoms
-              </span>
-              <div className="p-3.5 bg-gray-50 rounded-2xl border border-gray-200/80 text-xs text-gray-800 font-semibold leading-relaxed">
-                {selectedPatient.symptoms || "No symptoms recorded."}
-              </div>
-            </div>
-
-            <div className="space-y-1">
-              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
-                Doctor Notes
-              </span>
-              <div className="p-3.5 bg-emerald-50/40 rounded-2xl border border-emerald-100 text-xs text-gray-800 leading-relaxed italic">
-                {selectedPatient.caseNotes || "Routine examination complete."}
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => window.print()}
-                className="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-2xl transition cursor-pointer flex items-center justify-center gap-1.5 text-xs"
-              >
-                <Printer className="w-3.5 h-3.5" />
-                Print Case Sheet
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedPatient(null)}
-                className="flex-1 py-2.5 bg-[#072a22] text-white font-bold rounded-2xl transition cursor-pointer text-xs"
-              >
-                Close
-              </button>
             </div>
           </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onOpenModal}
+              className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl text-xs font-black transition flex items-center gap-2 shadow-md shadow-emerald-600/20 cursor-pointer"
+            >
+              <Plus className="w-4 h-4" /> New Inpatient Intake
+            </button>
+          </div>
+        </div>
+
+        {/* 4 Summary Stats */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
+          <div
+            onClick={() => setSelectedStatus("All")}
+            className={`p-4 rounded-2xl border transition cursor-pointer ${
+              selectedStatus === "All"
+                ? "bg-gray-900 text-white border-gray-900 shadow-xs"
+                : "bg-gray-50 hover:bg-gray-100/70 border-gray-200/70 text-gray-800"
+            }`}
+          >
+            <span className={`text-[10px] font-extrabold uppercase tracking-wider block ${selectedStatus === "All" ? "text-gray-300" : "text-gray-500"}`}>
+              Total Active Cases
+            </span>
+            <h3 className="text-2xl font-black mt-1">{totalCount}</h3>
+            <span className={`text-[10px] mt-0.5 block ${selectedStatus === "All" ? "text-gray-400" : "text-gray-400"}`}>
+              Central Patient Database
+            </span>
+          </div>
+
+          <div
+            onClick={() => setSelectedStatus("Emergency")}
+            className={`p-4 rounded-2xl border transition cursor-pointer ${
+              selectedStatus === "Emergency"
+                ? "bg-rose-600 text-white border-rose-600 shadow-md shadow-rose-600/30"
+                : "bg-rose-50/70 hover:bg-rose-100/70 border-rose-200 text-rose-950"
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <span className={`text-[10px] font-extrabold uppercase tracking-wider block ${selectedStatus === "Emergency" ? "text-rose-100" : "text-rose-800"}`}>
+                Code Red / STAT Resus
+              </span>
+              <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />
+            </div>
+            <h3 className="text-2xl font-black mt-1">{emergencyCount} Cases</h3>
+            <span className={`text-[10px] font-bold mt-0.5 block ${selectedStatus === "Emergency" ? "text-rose-200" : "text-rose-600"}`}>
+              Immediate Trauma & OT Action
+            </span>
+          </div>
+
+          <div
+            onClick={() => setSelectedStatus("Admitted")}
+            className={`p-4 rounded-2xl border transition cursor-pointer ${
+              selectedStatus === "Admitted"
+                ? "bg-emerald-700 text-white border-emerald-700 shadow-xs"
+                : "bg-emerald-50/70 hover:bg-emerald-100/70 border-emerald-200 text-emerald-950"
+            }`}
+          >
+            <span className={`text-[10px] font-extrabold uppercase tracking-wider block ${selectedStatus === "Admitted" ? "text-emerald-100" : "text-emerald-800"}`}>
+              Inpatient Wards
+            </span>
+            <h3 className="text-2xl font-black mt-1">{admittedCount} Occupied</h3>
+            <span className={`text-[10px] font-semibold mt-0.5 block ${selectedStatus === "Admitted" ? "text-emerald-200" : "text-emerald-700"}`}>
+              Telemetry Monitored
+            </span>
+          </div>
+
+          <div
+            onClick={() => setSelectedStatus("OPD")}
+            className={`p-4 rounded-2xl border transition cursor-pointer ${
+              selectedStatus === "OPD"
+                ? "bg-blue-600 text-white border-blue-600 shadow-xs"
+                : "bg-blue-50/70 hover:bg-blue-100/70 border-blue-200 text-blue-950"
+            }`}
+          >
+            <span className={`text-[10px] font-extrabold uppercase tracking-wider block ${selectedStatus === "OPD" ? "text-blue-100" : "text-blue-800"}`}>
+              OPD & Consults
+            </span>
+            <h3 className="text-2xl font-black mt-1">{opdCount} Records</h3>
+            <span className={`text-[10px] font-semibold mt-0.5 block ${selectedStatus === "OPD" ? "text-blue-200" : "text-blue-700"}`}>
+              Outpatient Roster
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Filter and Search Bar */}
+      <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+        <div className="flex items-center gap-2 overflow-x-auto w-full md:w-auto pb-1 md:pb-0">
+          {[
+            { id: "All", label: "All Cases" },
+            { id: "Emergency", label: "🚨 Code Red" },
+            { id: "Admitted", label: "Ward Beds" },
+            { id: "OPD", label: "OPD Cases" },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setSelectedStatus(tab.id)}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 ${
+                selectedStatus === tab.id
+                  ? "bg-gray-900 text-white shadow-xs"
+                  : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+
+          <select
+            value={selectedGender}
+            onChange={(e) => setSelectedGender(e.target.value)}
+            className="px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-700 focus:outline-none focus:border-emerald-500 shrink-0"
+          >
+            <option value="All">All Genders</option>
+            <option value="Male">Male Only</option>
+            <option value="Female">Female Only</option>
+          </select>
+        </div>
+
+        <div className="flex items-center gap-2.5 w-full md:w-auto">
+          <div className="relative w-full md:w-80">
+            <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-2.5" />
+            <input
+              type="text"
+              placeholder="Search by Patient Name, ABHA ID, Diagnosis, Bed..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-4 py-2 bg-white border border-gray-200 rounded-xl text-xs text-gray-800 font-medium focus:outline-none focus:border-emerald-500 shadow-2xs"
+            />
+          </div>
+
+          <div className="flex items-center border border-gray-200 bg-white rounded-xl p-0.5 shrink-0">
+            <button
+              onClick={() => setViewMode("Table")}
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-bold cursor-pointer transition ${
+                viewMode === "Table" ? "bg-gray-900 text-white shadow-xs" : "text-gray-500 hover:text-gray-900"
+              }`}
+            >
+              Table
+            </button>
+            <button
+              onClick={() => setViewMode("Cards")}
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-bold cursor-pointer transition ${
+                viewMode === "Cards" ? "bg-gray-900 text-white shadow-xs" : "text-gray-500 hover:text-gray-900"
+              }`}
+            >
+              Cards
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Content Area */}
+      {viewMode === "Table" ? (
+        <div className="bg-white rounded-3xl border border-gray-200/90 overflow-hidden shadow-xs">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs text-gray-600 border-collapse">
+              <thead className="bg-gray-50/80 text-[10px] font-black text-gray-400 uppercase tracking-wider border-b border-gray-200">
+                <tr>
+                  <th className="py-4 px-5">Patient Name & Demographics</th>
+                  <th className="py-4 px-4">ABHA & Identification</th>
+                  <th className="py-4 px-4">Intake Date & Time</th>
+                  <th className="py-4 px-4">Diagnosis & Case Details</th>
+                  <th className="py-4 px-4">Allocated Ward Bed</th>
+                  <th className="py-4 px-4">Telemetry Vitals</th>
+                  <th className="py-4 px-5 text-right">Actions</th>
+                </tr>
+              </thead>
+
+              <tbody className="divide-y divide-gray-100">
+                {filteredPatients.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="py-14 text-center">
+                      <div className="flex flex-col items-center justify-center space-y-2">
+                        <User className="w-8 h-8 text-gray-300" />
+                        <p className="text-sm font-bold text-gray-500">No matching patient case records found</p>
+                        <span className="text-xs text-gray-400">Try adjusting your search query or triage filters</span>
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  filteredPatients.map((patient: any) => {
+                    const isEmergency = isEmergencyCase(patient);
+                    const { date, time } = formatDateTime(patient.createdAt);
+
+                    return (
+                      <tr
+                        key={patient.id}
+                        onClick={() => onSelectPatient(patient)}
+                        className={`cursor-pointer transition-all duration-150 hover:bg-gray-50/90 ${
+                          isEmergency ? "bg-rose-50/40 hover:bg-rose-50/70" : ""
+                        }`}
+                      >
+                        {/* Name & Demographics */}
+                        <td className="py-4 px-5">
+                          <div className="flex items-center gap-3">
+                            <div
+                              className={`w-10 h-10 rounded-2xl flex items-center justify-center font-bold text-xs shrink-0 ${
+                                isEmergency
+                                  ? "bg-rose-600 text-white shadow-md shadow-rose-600/30 animate-pulse"
+                                  : "bg-emerald-100 text-emerald-800"
+                              }`}
+                            >
+                              {isEmergency ? <Siren className="w-5 h-5" /> : <User className="w-5 h-5" />}
+                            </div>
+
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-black text-sm text-gray-900">{patient.name}</span>
+                                {isEmergency && (
+                                  <span className="bg-rose-600 text-white text-[9px] font-black px-1.5 py-0.5 rounded uppercase tracking-wider">
+                                    Code Red
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2 mt-0.5 text-[11px] text-gray-400 font-medium">
+                                <span>{patient.age ? `${patient.age} Yrs` : "Age N/A"}</span>
+                                <span>•</span>
+                                <span>{patient.gender || "Patient"}</span>
+                                {patient.bloodGroup && (
+                                  <>
+                                    <span>•</span>
+                                    <span className="text-rose-600 font-bold flex items-center gap-0.5">
+                                      <Droplets className="w-3 h-3" /> {patient.bloodGroup}
+                                    </span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* ABHA & Contact */}
+                        <td className="py-4 px-4 font-mono text-[11px]">
+                          <div className="flex flex-col">
+                            <span className="font-bold text-gray-800 flex items-center gap-1">
+                              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                              {patient.abhaId || "ABHA-VERIFIED"}
+                            </span>
+                            {patient.contact && (
+                              <span className="text-[10px] text-gray-400 flex items-center gap-1 font-sans mt-0.5">
+                                <Phone className="w-3 h-3" /> {patient.contact}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* Date & Time */}
+                        <td className="py-4 px-4">
+                          <div className="flex flex-col">
+                            <span className="font-bold text-gray-900 flex items-center gap-1 text-xs">
+                              <Calendar className="w-3 h-3 text-gray-400" /> {date}
+                            </span>
+                            <span className="text-[10px] text-gray-400 flex items-center gap-1 mt-0.5 font-mono">
+                              <Clock className="w-3 h-3 text-gray-400" /> {time}
+                            </span>
+                          </div>
+                        </td>
+
+                        {/* Diagnosis & Treatment */}
+                        <td className="py-4 px-4 max-w-xs">
+                          <div>
+                            <span
+                              className={`font-black text-xs block truncate ${
+                                isEmergency ? "text-rose-700" : "text-gray-900"
+                              }`}
+                            >
+                              {patient.diagnosis || patient.complaint || "Routine Clinical Intake"}
+                            </span>
+                            <span className="text-[10px] text-gray-400 truncate block mt-0.5">
+                              {patient.complaint || patient.treatment || "Standard protocol active"}
+                            </span>
+                          </div>
+                        </td>
+
+                        {/* Allocated Bed */}
+                        <td className="py-4 px-4">
+                          {patient.bedNumber && patient.bedNumber !== "Discharged" ? (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-black bg-emerald-50 text-emerald-900 border border-emerald-300 shadow-2xs">
+                              <BedDouble className="w-3.5 h-3.5 text-emerald-700" />
+                              {patient.bedNumber}
+                            </span>
+                          ) : (
+                            <span className="text-[11px] font-bold text-gray-400 bg-gray-100 px-2.5 py-1 rounded-xl">
+                              OPD / Unassigned
+                            </span>
+                          )}
+                        </td>
+
+                        {/* Vitals */}
+                        <td className="py-4 px-4">
+                          <div className="flex items-center gap-1.5 text-xs font-bold text-gray-700">
+                            <Activity className={`w-4 h-4 shrink-0 ${isEmergency ? "text-rose-600 animate-pulse" : "text-emerald-600"}`} />
+                            <span className="truncate max-w-[130px] font-mono text-[11px]">
+                              {patient.vitals || "BP 120/80, SpO2 98%"}
+                            </span>
+                          </div>
+                        </td>
+
+                        {/* Action Buttons */}
+                        <td className="py-4 px-5 text-right">
+                          <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              onClick={() => onSelectPatient(patient)}
+                              className="p-2 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition cursor-pointer"
+                              title="View Patient Chart"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={(e) => handleDelete(e, patient.id, patient.name)}
+                              className="p-2 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition cursor-pointer"
+                              title="Delete Patient Record"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : (
+        /* Cards View Mode */
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+          {filteredPatients.map((patient: any) => {
+            const isEmergency = isEmergencyCase(patient);
+            const { date, time } = formatDateTime(patient.createdAt);
+
+            return (
+              <div
+                key={patient.id}
+                onClick={() => onSelectPatient(patient)}
+                className={`p-5 rounded-3xl border-2 transition-all cursor-pointer flex flex-col justify-between shadow-xs ${
+                  isEmergency
+                    ? "bg-rose-50/60 border-rose-300 hover:border-rose-500"
+                    : "bg-white border-gray-200 hover:border-emerald-300"
+                }`}
+              >
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2.5">
+                      <div
+                        className={`w-10 h-10 rounded-2xl flex items-center justify-center font-bold ${
+                          isEmergency ? "bg-rose-600 text-white animate-pulse" : "bg-emerald-100 text-emerald-800"
+                        }`}
+                      >
+                        {isEmergency ? <Siren className="w-5 h-5" /> : <User className="w-5 h-5" />}
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-black text-gray-900">{patient.name}</h3>
+                        <p className="text-[10px] text-gray-400 font-mono">
+                          {patient.age}Y • {patient.gender} • {patient.bloodGroup || "O+"}
+                        </p>
+                      </div>
+                    </div>
+
+                    <span
+                      className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-md ${
+                        isEmergency ? "bg-rose-600 text-white" : "bg-emerald-100 text-emerald-800"
+                      }`}
+                    >
+                      {isEmergency ? "Code Red" : "Admitted"}
+                    </span>
+                  </div>
+
+                  <div className="bg-white/80 p-3 rounded-2xl border border-gray-100 space-y-1.5 text-xs">
+                    <p className="font-bold text-gray-800 line-clamp-1">
+                      Dx: {patient.diagnosis || patient.complaint || "Clinical Case"}
+                    </p>
+                    <p className="text-[11px] text-gray-500 flex items-center gap-1 font-mono">
+                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" /> {patient.abhaId || "ABHA Verified"}
+                    </p>
+                    <p className="text-[11px] text-gray-500 flex items-center gap-1 font-mono">
+                      <Activity className="w-3.5 h-3.5 text-rose-600" /> {patient.vitals || "BP Normal"}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between">
+                  <span className="text-[10px] text-gray-400 font-mono">
+                    {date} • {time}
+                  </span>
+                  <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      onClick={(e) => handleDelete(e, patient.id, patient.name)}
+                      className="p-1.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                    <span className="text-xs font-bold text-emerald-600 flex items-center gap-0.5 hover:underline">
+                      Details <ChevronRight className="w-3.5 h-3.5" />
+                    </span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
