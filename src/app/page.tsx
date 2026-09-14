@@ -6,6 +6,7 @@ import Header from "@/components/layout/Header";
 import PatientChart from "@/components/dashboard/PatientChart";
 import ClinicalAppointmentsWidget from "@/components/dashboard/ClinicalAppointmentsWidget";
 import CaseTakingModal from "@/components/case-taking/CaseTakingModal";
+import LiveHospitalMetrics from "@/components/dashboard/LiveHospitalMetrics";
 import PatientProfileView from "@/components/dashboard/PatientProfileView";
 import VitalsCard from "@/components/VitalsCard";
 import type { PatientData } from "@/components/dashboard/PatientProfileView";
@@ -622,28 +623,7 @@ function Dashboard() {
                       </div>
                     </div>
 
-                    <div className="bg-white p-5 rounded-3xl border border-gray-200/70 shadow-xs flex flex-col justify-between">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-gray-700">Bed Occupancy</span>
-                        <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-100">
-                          +{availableBedsCount} Clean
-                        </span>
-                      </div>
-                      <div className="my-1">
-                        <h3 className="text-3xl font-extrabold text-gray-800">{availableBedsCount}</h3>
-                        <p className="text-[11px] text-gray-400">
-                          Available capacity ({beds?.length || 0} Total Beds)
-                        </p>
-                      </div>
-                      <div className="flex gap-4 text-xs font-medium text-gray-600 border-t border-gray-50 pt-2">
-                        <span className="flex items-center gap-1.5">
-                          <Building2 className="w-3.5 h-3.5 text-gray-400" /> Occupied: {occupiedBedsCount}
-                        </span>
-                        <span className="flex items-center gap-1.5">
-                          <BedDouble className="w-3.5 h-3.5 text-gray-400" /> Available: {availableBedsCount}
-                        </span>
-                      </div>
-                    </div>
+                  <LiveHospitalMetrics />
 
                     <div className="bg-white p-5 rounded-3xl border border-gray-200/70 shadow-xs flex flex-col justify-between">
                       <div className="flex items-center justify-between">
