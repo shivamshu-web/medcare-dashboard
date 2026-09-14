@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
+import IcuTelemetryModal from "@/components/dashboard/IcuTelemetryModal";
 import { useHospital } from "@/context/HospitalContext";
 import {
   BedDouble,
@@ -13,6 +14,7 @@ import {
   Zap,
   Flame,
   Radio,
+  Maximize2,
 } from "lucide-react";
 
 // Live SVG ECG Telemetry Waveform Component
@@ -68,9 +70,20 @@ const BASE_WARDS = [
 ];
 
 export default function WardsView() {
-  const { patients, setPatients, beds, setBeds, refreshPatients } = useHospital() as any;
+  const { patients, setPatients, refreshPatients } = useHospital() as any;
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedDept, setSelectedDept] = useState("All");
+
+  // State to manage active bed in IcuTelemetryModal
+  const [activeTelemetry, setActiveTelemetry] = useState<{
+    isOpen: boolean;
+    patientName: string;
+    bedNumber: string;
+  }>({
+    isOpen: false,
+    patientName: "",
+    bedNumber: "",
+  });
 
   // Dynamic telemetry simulator state for live cardiac rhythm
   const [telemetryPulse, setTelemetryPulse] = useState({ hr: 78, spo2: 98, map: 93 });
@@ -89,7 +102,6 @@ export default function WardsView() {
   // Sync beds directly with real database patients
   const unifiedBeds = useMemo(() => {
     return BASE_WARDS.map((base) => {
-      // Look for a real patient in DB allocated to this bed
       const assignedPatient = (patients || []).find((p: any) => {
         const bedRef = (p.bedNumber || "").toLowerCase();
         return (
@@ -121,7 +133,6 @@ export default function WardsView() {
     if (!patientId) return;
 
     try {
-      // If patient is in state, remove bed or clear patient
       if (setPatients) {
         setPatients((prev: any[]) =>
           prev.map((p: any) => (p.id === patientId ? { ...p, bedNumber: "Discharged", status: "Discharged" } : p))
@@ -265,17 +276,40 @@ export default function WardsView() {
                     </div>
                   </div>
 
-                  <span
-                    className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                      isOccupied
-                        ? b.isCritical
-                          ? "bg-rose-600 text-white border border-rose-400 animate-pulse"
-                          : "bg-amber-100 text-amber-900 border border-amber-300"
-                        : "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                    }`}
-                  >
-                    {isOccupied ? (b.isCritical ? "Code Red" : "Admitted") : "Sanitized"}
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    {isOccupied && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setActiveTelemetry({
+                            isOpen: true,
+                            patientName: patient?.name || "ICU Patient",
+                            bedNumber: b.bedNumber,
+                          })
+                        }
+                        className={`p-1.5 rounded-lg border transition cursor-pointer flex items-center gap-1 text-[10px] font-bold ${
+                          b.isCritical
+                            ? "bg-rose-950/80 border-rose-500 text-rose-300 hover:bg-rose-900"
+                            : "bg-emerald-950/80 border-emerald-500 text-emerald-300 hover:bg-emerald-900"
+                        }`}
+                        title="Open ICU Telemetry Monitor"
+                      >
+                        <Maximize2 className="w-3 h-3" />
+                      </button>
+                    )}
+
+                    <span
+                      className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                        isOccupied
+                          ? b.isCritical
+                            ? "bg-rose-600 text-white border border-rose-400 animate-pulse"
+                            : "bg-amber-100 text-amber-900 border border-amber-300"
+                          : "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                      }`}
+                    >
+                      {isOccupied ? (b.isCritical ? "Code Red" : "Admitted") : "Sanitized"}
+                    </span>
+                  </div>
                 </div>
 
                 {/* Patient Case Sync Info */}
@@ -305,10 +339,20 @@ export default function WardsView() {
                       </p>
                     </div>
 
-                    {/* Medical Telemetry Waveform */}
-                    <div className="space-y-1">
+                    {/* Medical Telemetry Waveform (Clickable to launch Bedside Monitor) */}
+                    <div
+                      onClick={() =>
+                        setActiveTelemetry({
+                          isOpen: true,
+                          patientName: patient?.name || "ICU Patient",
+                          bedNumber: b.bedNumber,
+                        })
+                      }
+                      className="space-y-1 cursor-pointer group"
+                      title="Click to launch Bedside Audio Telemetry"
+                    >
                       <div className="flex items-center justify-between text-[10px] font-bold">
-                        <span className={`flex items-center gap-1 ${b.isCritical ? "text-emerald-400" : "text-gray-600"}`}>
+                        <span className={`flex items-center gap-1 group-hover:underline ${b.isCritical ? "text-emerald-400" : "text-gray-600"}`}>
                           <Activity className="w-3.5 h-3.5 text-emerald-500 animate-bounce" /> Live Continuous Waveform
                         </span>
                         <span className="font-mono text-emerald-400">
@@ -341,19 +385,46 @@ export default function WardsView() {
                   Dept: {b.dept}
                 </span>
 
-                {isOccupied && patient && (
-                  <button
-                    onClick={() => handleDischarge(patient.id, b.bedNumber)}
-                    className="text-[11px] font-black text-rose-500 hover:text-rose-400 hover:underline cursor-pointer flex items-center gap-1 transition"
-                  >
-                    <UserCheck className="w-3.5 h-3.5" /> Discharge & Free Bed →
-                  </button>
-                )}
+                <div className="flex items-center gap-2">
+                  {isOccupied && (
+                    <button
+                      onClick={() =>
+                        setActiveTelemetry({
+                          isOpen: true,
+                          patientName: patient?.name || "ICU Patient",
+                          bedNumber: b.bedNumber,
+                        })
+                      }
+                      className="text-[11px] font-bold text-emerald-500 hover:text-emerald-400 flex items-center gap-1 transition cursor-pointer"
+                    >
+                      <Activity className="w-3 h-3" /> Telemetry
+                    </button>
+                  )}
+
+                  {isOccupied && patient && (
+                    <button
+                      onClick={() => handleDischarge(patient.id, b.bedNumber)}
+                      className="text-[11px] font-black text-rose-500 hover:text-rose-400 hover:underline cursor-pointer flex items-center gap-1 transition"
+                    >
+                      <UserCheck className="w-3.5 h-3.5" /> Discharge →
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           );
         })}
       </div>
+
+      {/* Bedside Live ECG & Audio Monitor Popup */}
+      {activeTelemetry.isOpen && (
+        <IcuTelemetryModal
+          isOpen={activeTelemetry.isOpen}
+          onClose={() => setActiveTelemetry({ isOpen: false, patientName: "", bedNumber: "" })}
+          patientName={activeTelemetry.patientName}
+          bedNumber={activeTelemetry.bedNumber}
+        />
+      )}
     </div>
   );
 }

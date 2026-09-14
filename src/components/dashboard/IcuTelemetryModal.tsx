@@ -27,13 +27,46 @@ export default function IcuTelemetryModal({
   bedNumber = "ICU-01",
 }: IcuTelemetryModalProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+
   const [heartRate, setHeartRate] = useState(74);
   const [spo2, setSpo2] = useState(98);
   const [respRate, setRespRate] = useState(16);
   const [bpSystolic, setBpSystolic] = useState(122);
   const [bpDiastolic, setBpDiastolic] = useState(78);
-  const [isMuted, setIsMuted] = useState(true);
+  const [isMuted, setIsMuted] = useState(false); // Default active for realism
   const [arrhythmiaAlert, setArrhythmiaAlert] = useState(false);
+
+  // Web Audio Synthesizer for Clinical QRS Beep
+  const playQRSBeep = (freq = 880, duration = 0.08) => {
+    if (isMuted) return;
+    try {
+      if (!audioCtxRef.current) {
+        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+        audioCtxRef.current = new AudioContextClass();
+      }
+      const ctx = audioCtxRef.current;
+      if (ctx.state === "suspended") {
+        ctx.resume();
+      }
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(freq, ctx.currentTime);
+
+      gain.gain.setValueAtTime(0.12, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start();
+      osc.stop(ctx.currentTime + duration);
+    } catch (e) {
+      // Audio context policy safe catch
+    }
+  };
 
   // Fluctuating vitals simulation
   useEffect(() => {
@@ -61,7 +94,7 @@ export default function IcuTelemetryModal({
     return () => clearInterval(interval);
   }, [isOpen]);
 
-  // Live ECG & Pleth Waveform Canvas Rendering Loop
+  // Live ECG & Pleth Waveform Canvas Rendering Loop + QRS Audio Sync
   useEffect(() => {
     if (!isOpen) return;
 
@@ -87,7 +120,7 @@ export default function IcuTelemetryModal({
       ctx.fillRect(x, 0, 10, height);
 
       // Lead II ECG Synthetic Waveform (P - Q - R - S - T)
-      ctx.strokeStyle = "#10b981"; // ECG Green
+      ctx.strokeStyle = arrhythmiaAlert ? "#f43f5e" : "#10b981"; // ECG Green or Alert Red
       ctx.lineWidth = 2.2;
       ctx.beginPath();
 
@@ -99,8 +132,11 @@ export default function IcuTelemetryModal({
 
       if (phase === 10) yOffset = -8; // P wave
       else if (phase === 18) yOffset = 4; // Q wave
-      else if (phase === 20) yOffset = -55; // R peak
-      else if (phase === 22) yOffset = 14; // S dip
+      else if (phase === 20) {
+        yOffset = -55; // R peak
+        // Play Audio QRS Beep synchronously with R-wave
+        playQRSBeep(arrhythmiaAlert ? 1040 : 880, 0.08);
+      } else if (phase === 22) yOffset = 14; // S dip
       else if (phase === 30) yOffset = -14; // T wave
       else yOffset = (Math.random() - 0.5) * 1.5; // baseline noise
 
@@ -128,7 +164,7 @@ export default function IcuTelemetryModal({
     return () => {
       cancelAnimationFrame(animationFrameId);
     };
-  }, [isOpen]);
+  }, [isOpen, isMuted, arrhythmiaAlert]);
 
   if (!isOpen) return null;
 
@@ -157,10 +193,15 @@ export default function IcuTelemetryModal({
             )}
             <button
               onClick={() => setIsMuted(!isMuted)}
-              className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-emerald-300 transition cursor-pointer"
-              title={isMuted ? "Unmute Beep" : "Mute Monitor"}
+              className={`p-2 rounded-xl border transition cursor-pointer flex items-center gap-1.5 text-xs font-bold ${
+                isMuted
+                  ? "bg-white/5 border-gray-700 text-gray-400"
+                  : "bg-emerald-950/80 border-emerald-500/50 text-emerald-300 shadow-xs"
+              }`}
+              title={isMuted ? "Unmute Sound" : "Mute Beep"}
             >
-              {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+              {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4 text-emerald-400 animate-pulse" />}
+              <span>{isMuted ? "MUTED" : "BEEP ACTIVE"}</span>
             </button>
             <button
               onClick={onClose}
@@ -246,10 +287,10 @@ export default function IcuTelemetryModal({
             Central Telemetry Node Online • 0 dropped packets
           </span>
           <button
-            onClick={() => setHeartRate(118)}
+            onClick={() => setHeartRate((prev) => (prev > 100 ? 76 : 118))}
             className="px-3 py-1 bg-white/5 hover:bg-rose-500/20 text-gray-300 hover:text-rose-300 rounded-lg text-[10px] font-bold transition cursor-pointer"
           >
-            Simulate Tachycardia
+            Toggle Tachycardia Alert
           </button>
         </div>
       </div>

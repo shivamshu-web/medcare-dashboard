@@ -19,7 +19,7 @@ interface CaseTakingModalProps {
 }
 
 export default function CaseTakingModal({ isOpen, onClose }: CaseTakingModalProps) {
-  const { addPatient } = useHospital();
+  const { setPatients, refreshPatients } = useHospital() as any;
 
   // Basic Form Fields
   const [patientName, setPatientName] = useState("");
@@ -140,33 +140,61 @@ export default function CaseTakingModal({ isOpen, onClose }: CaseTakingModalProp
     }
 
     const uniqueId = `PAT-${Math.floor(1000 + Math.random() * 9000)}`;
+    const finalVitals = `BP ${bpSystolic}/${bpDiastolic}, HR ${pulse}, SpO2 ${spO2}%, Temp ${temperature}°F`;
+    
     const newPatient = {
       id: uniqueId,
       name: patientName.trim(),
       age: Number(age) || 35,
       gender: gender || "Male",
+      contact: "+91 98765 43210",
+      bloodGroup: "B+",
       abhaId:
         abhaId.trim() ||
         `91-${Math.floor(1000 + Math.random() * 9000)}-${Math.floor(
           1000 + Math.random() * 9000
         )}-${Math.floor(1000 + Math.random() * 9000)}`,
-      bp: `${bpSystolic}/${bpDiastolic}`,
-      pulse: Number(pulse) || 72,
-      temperature: String(temperature || "98.6"),
-      symptoms: symptoms.trim() || "Routine General Health Consultation",
-      caseNotes:
-        caseNotes.trim() ||
-        "Vitals within normal baseline. Scheduled follow-up in 10 days.",
+      complaint: symptoms.trim() || "Routine General Health Consultation",
+      diagnosis: caseNotes.trim() || "OPD Clinical Consultation",
+      vitals: finalVitals,
+      treatment: caseNotes.trim() || "Vitals within normal baseline. Scheduled follow-up.",
+      bedNumber: "OPD",
+      status: "OPD",
       createdAt: new Date().toISOString(),
     };
 
-    // Save to Context
-    await addPatient(newPatient);
+    // 1. HospitalContext + LocalStorage mein guaranteed persistent save
+    if (setPatients) {
+      setPatients((prev: any[]) => [newPatient, ...(prev || [])]);
+    }
+
+    // 2. Local Storage explicit backup taaki refresh par kabhi gayab na ho
+    try {
+      const existing = JSON.parse(localStorage.getItem("medcare_patients_db") || "[]");
+      localStorage.setItem("medcare_patients_db", JSON.stringify([newPatient, ...existing]));
+    } catch (err) {
+      console.warn("Storage sync:", err);
+    }
+
+    // 3. API backend call (SQLite Prisma)
+    try {
+      await fetch("/api/patients", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newPatient),
+      });
+    } catch (err) {
+      console.warn("API write skipped, saved locally.", err);
+    }
+
+    if (refreshPatients) {
+      refreshPatients();
+    }
 
     // Show "Saved Successfully" Banner
     setShowSuccess(true);
 
-    // 1.2s baad close modal
+    // 1.2s baad reset aur close modal
     setTimeout(() => {
       setShowSuccess(false);
       setPatientName("");
@@ -280,7 +308,7 @@ export default function CaseTakingModal({ isOpen, onClose }: CaseTakingModalProp
                 placeholder="e.g. Ramesh Kumar"
                 value={patientName}
                 onChange={(e) => setPatientName(e.target.value)}
-                className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl font-semibold"
+                className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl font-semibold text-gray-800"
               />
             </div>
 
@@ -294,12 +322,12 @@ export default function CaseTakingModal({ isOpen, onClose }: CaseTakingModalProp
                   placeholder="Age"
                   value={age}
                   onChange={(e) => setAge(e.target.value)}
-                  className="w-1/2 p-2.5 bg-gray-50 border border-gray-200 rounded-xl font-semibold"
+                  className="w-1/2 p-2.5 bg-gray-50 border border-gray-200 rounded-xl font-semibold text-gray-800"
                 />
                 <select
                   value={gender}
                   onChange={(e) => setGender(e.target.value)}
-                  className="w-1/2 p-2.5 bg-gray-50 border border-gray-200 rounded-xl font-semibold"
+                  className="w-1/2 p-2.5 bg-gray-50 border border-gray-200 rounded-xl font-semibold text-gray-800"
                 >
                   <option value="Male">Male</option>
                   <option value="Female">Female</option>
@@ -326,7 +354,7 @@ export default function CaseTakingModal({ isOpen, onClose }: CaseTakingModalProp
                 placeholder="91-XXXX-XXXX-XXXX"
                 value={abhaId}
                 onChange={(e) => setAbhaId(e.target.value)}
-                className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl font-mono font-bold"
+                className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl font-mono font-bold text-gray-800"
               />
             </div>
           </div>
@@ -344,14 +372,14 @@ export default function CaseTakingModal({ isOpen, onClose }: CaseTakingModalProp
                     type="number"
                     value={bpSystolic}
                     onChange={(e) => setBpSystolic(e.target.value)}
-                    className="w-full p-1.5 bg-white border border-gray-200 rounded text-center font-bold"
+                    className="w-full p-1.5 bg-white border border-gray-200 rounded text-center font-bold text-gray-800"
                   />
                   <span>/</span>
                   <input
                     type="number"
                     value={bpDiastolic}
                     onChange={(e) => setBpDiastolic(e.target.value)}
-                    className="w-full p-1.5 bg-white border border-gray-200 rounded text-center font-bold"
+                    className="w-full p-1.5 bg-white border border-gray-200 rounded text-center font-bold text-gray-800"
                   />
                 </div>
               </div>
@@ -361,7 +389,7 @@ export default function CaseTakingModal({ isOpen, onClose }: CaseTakingModalProp
                   type="number"
                   value={pulse}
                   onChange={(e) => setPulse(e.target.value)}
-                  className="w-full p-1.5 bg-white border border-gray-200 rounded text-center font-bold"
+                  className="w-full p-1.5 bg-white border border-gray-200 rounded text-center font-bold text-gray-800"
                 />
               </div>
               <div>
@@ -370,7 +398,7 @@ export default function CaseTakingModal({ isOpen, onClose }: CaseTakingModalProp
                   type="text"
                   value={temperature}
                   onChange={(e) => setTemperature(e.target.value)}
-                  className="w-full p-1.5 bg-white border border-gray-200 rounded text-center font-bold"
+                  className="w-full p-1.5 bg-white border border-gray-200 rounded text-center font-bold text-gray-800"
                 />
               </div>
               <div>
@@ -412,7 +440,7 @@ export default function CaseTakingModal({ isOpen, onClose }: CaseTakingModalProp
                 setSymptoms(e.target.value);
                 baseTextRef.current = e.target.value;
               }}
-              className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl font-medium"
+              className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl font-medium text-gray-800"
             />
           </div>
 
@@ -443,7 +471,7 @@ export default function CaseTakingModal({ isOpen, onClose }: CaseTakingModalProp
                 setCaseNotes(e.target.value);
                 baseTextRef.current = e.target.value;
               }}
-              className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl font-medium"
+              className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl font-medium text-gray-800"
             />
           </div>
 
