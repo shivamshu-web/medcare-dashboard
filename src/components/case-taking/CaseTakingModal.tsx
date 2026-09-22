@@ -43,6 +43,7 @@ export default function CaseTakingModal({ isOpen, onClose }: CaseTakingModalProp
 
   // Success Notification State
   const [showSuccess, setShowSuccess] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Speech-to-Text Setup
   const [isListening, setIsListening] = useState(false);
@@ -140,16 +141,19 @@ export default function CaseTakingModal({ isOpen, onClose }: CaseTakingModalProp
 
     if (isListening && recognitionRef.current) {
       recognitionRef.current.stop();
+      setIsListening(false);
     }
 
-    const uniqueId = `PAT-${Math.floor(1000 + Math.random() * 9000)}`;
+    setIsSubmitting(true);
+
+    const tempId = `PAT-${Math.floor(1000 + Math.random() * 9000)}`;
     const finalVitals = `BP ${bpSystolic}/${bpDiastolic}, HR ${pulse}, SpO2 ${spO2}%, Temp ${temperature}°F`;
     const finalDiagnosis = caseNotes.trim() || "OPD Clinical Consultation";
     const finalComplaint = symptoms.trim() || "Routine General Health Consultation";
     const isAdmitted = selectedBed && selectedBed !== "OPD";
 
-    const newPatient = {
-      id: uniqueId,
+    const newPatientPayload = {
+      id: tempId,
       name: patientName.trim(),
       age: Number(age) || 35,
       gender: gender || "Male",
@@ -169,20 +173,75 @@ export default function CaseTakingModal({ isOpen, onClose }: CaseTakingModalProp
       createdAt: new Date().toISOString(),
     };
 
-    // 1. Guaranteed LocalStorage Save (Refresh safe backup)
+    let persistedPatient = newPatientPayload;
+
+    // 1. Send directly to Prisma Backend API
+    try {
+      const response = await fetch("/api/patients", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newPatientPayload),
+      });
+
+      if (response.ok) {
+        const savedData = await response.json();
+        if (savedData && savedData.id) {
+          persistedPatient = { ...newPatientPayload, ...savedData };
+        }
+      } else {
+        console.warn("Backend returned non-200, continuing with local persistence.");
+      }
+    } catch (apiErr) {
+      console.warn("Backend API sync offline, saving to browser storage:", apiErr);
+    }
+
+    // 2. Guaranteed LocalStorage Patient DB Save (Survives Refresh)
     try {
       const stored = JSON.parse(localStorage.getItem("medcare_patients_db") || "[]");
-      localStorage.setItem("medcare_patients_db", JSON.stringify([newPatient, ...stored]));
+      const filtered = stored.filter((p: any) => p.id !== persistedPatient.id);
+      localStorage.setItem("medcare_patients_db", JSON.stringify([persistedPatient, ...filtered]));
     } catch (err) {
       console.warn("LocalStorage save warn:", err);
     }
 
-    // 2. HospitalContext Live Update (Updates Patient Cases table immediately)
-    if (setPatients) {
-      setPatients((prev: any[]) => [newPatient, ...(prev || [])]);
+    // 3. Update Wards State in LocalStorage (Locks Bed for WardsView & Dashboard Bed Meter)
+    if (isAdmitted) {
+      try {
+        const currentWards = JSON.parse(localStorage.getItem("medcare_wards_state") || "[]");
+        if (Array.isArray(currentWards) && currentWards.length > 0) {
+          const updatedWards = currentWards.map((w: any) => {
+            if (
+              String(w.bedNumber).toLowerCase() === String(selectedBed).toLowerCase() ||
+              String(w.id).toLowerCase() === String(selectedBed).toLowerCase()
+            ) {
+              return {
+                ...w,
+                status: "Occupied",
+                isOccupied: true,
+                occupied: true,
+                patientName: persistedPatient.name,
+                patient: persistedPatient.name,
+                diagnosis: finalDiagnosis,
+                vitals: finalVitals,
+              };
+            }
+            return w;
+          });
+          localStorage.setItem("medcare_wards_state", JSON.stringify(updatedWards));
+        }
+      } catch (wErr) {
+        console.warn("Wards state update warn:", wErr);
+      }
     }
 
-    // 3. Wards State Live Update (Locks Bed in Wards & Beds screen)
+    // 4. Update React Contexts (Instant UI change without needing reload)
+    if (setPatients) {
+      setPatients((prev: any[]) => [
+        persistedPatient,
+        ...(prev || []).filter((p: any) => p.id !== persistedPatient.id),
+      ]);
+    }
+
     if (isAdmitted && setBeds) {
       setBeds((prevBeds: any[]) =>
         (prevBeds || []).map((b: any) =>
@@ -190,8 +249,9 @@ export default function CaseTakingModal({ isOpen, onClose }: CaseTakingModalProp
             ? {
                 ...b,
                 status: "Occupied",
-                patientName: newPatient.name,
-                patient: newPatient.name,
+                occupied: true,
+                patientName: persistedPatient.name,
+                patient: persistedPatient.name,
                 condition: "Stable",
                 diagnosis: finalDiagnosis,
                 vitals: finalVitals,
@@ -201,20 +261,20 @@ export default function CaseTakingModal({ isOpen, onClose }: CaseTakingModalProp
       );
     }
 
-    // 4. Background SQLite Prisma API sync
-    try {
-      await fetch("/api/patients", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(newPatient),
-      });
-    } catch (err) {
-      console.warn("Backend API sync offline, persisted locally.");
+    // 5. Broadcast to Dashboard widgets
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("storage"));
+      window.dispatchEvent(new Event("medcare_wards_updated"));
     }
 
-    if (refreshPatients) refreshPatients();
+    if (refreshPatients) {
+      try {
+        refreshPatients();
+      } catch (rErr) {}
+    }
 
     // Show "Saved Successfully" Banner
+    setIsSubmitting(false);
     setShowSuccess(true);
 
     // Close modal & reset fields
@@ -531,11 +591,11 @@ export default function CaseTakingModal({ isOpen, onClose }: CaseTakingModalProp
             </button>
             <button
               type="submit"
-              disabled={showSuccess}
+              disabled={showSuccess || isSubmitting}
               className="flex-1 py-2.5 bg-[#072a22] hover:bg-[#0c382e] text-white font-bold rounded-xl flex items-center justify-center gap-2 cursor-pointer shadow-md disabled:opacity-50 transition"
             >
               <Save className="w-4 h-4 text-emerald-400" />
-              <span>Save & Register Patient</span>
+              <span>{isSubmitting ? "Saving..." : "Save & Register Patient"}</span>
             </button>
           </div>
         </form>
