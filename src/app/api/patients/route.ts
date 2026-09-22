@@ -1,25 +1,38 @@
 import { NextResponse } from "next/server";
 import * as dbModule from "@/lib/db";
 
-// Har tarah ke export (named prisma, named db, ya default) ko safely pakad lega
-const db: any =
+// Prisma instance ko safely extract karna
+const prismaClient: any =
   (dbModule as any).prisma ||
   (dbModule as any).db ||
   (dbModule as any).default ||
   dbModule;
 
+// Patient model ko safely identify karna
+function getPatientModel() {
+  if (!prismaClient) return null;
+  return (
+    prismaClient.patient ||
+    prismaClient.Patient ||
+    prismaClient.patients ||
+    null
+  );
+}
+
 export async function GET() {
   try {
-    const patientModel = db?.patient || db?.Patient;
+    const patientModel = getPatientModel();
     if (!patientModel) {
-      return NextResponse.json([], { status: 200 });
+      console.warn("⚠️ Prisma patient model not found on db instance");
+      return NextResponse.json([]);
     }
+
     const patients = await patientModel.findMany({
       orderBy: { createdAt: "desc" },
     });
     return NextResponse.json(patients);
-  } catch (error) {
-    console.error("GET /api/patients error:", error);
+  } catch (error: any) {
+    console.error("❌ GET /api/patients error:", error?.message || error);
     return NextResponse.json([], { status: 200 });
   }
 }
@@ -27,32 +40,66 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const patientModel = db?.patient || db?.Patient;
+    console.log("📥 Incoming Intake/Code Red Data:", body);
+
+    const patientModel = getPatientModel();
 
     if (!patientModel) {
-      return NextResponse.json({ id: `PT-${Date.now()}`, ...body }, { status: 201 });
+      console.error("❌ Prisma Database Model not found! Check src/lib/db.ts");
+      return NextResponse.json(
+        { error: "Database connection not initialized" },
+        { status: 500 }
+      );
     }
 
-    const newPatient = await patientModel.create({
-      data: {
-        name: body.name || "Emergency Patient",
-        age: typeof body.age === "number" ? body.age : parseInt(body.age) || 30,
-        gender: body.gender || "Male",
-        contact: body.contact || "",
-        bloodGroup: body.bloodGroup || "O+",
-        abhaId: body.abhaId || `ABHA-${Date.now().toString().slice(-6)}`,
-        complaint: body.complaint || "Routine Intake",
-        diagnosis: body.diagnosis || "Under Observation",
-        vitals: body.vitals || "Normal",
-        treatment: body.treatment || "",
-        bedNumber: body.bedNumber || "",
-        status: body.status || "Admitted",
-      },
+    // Age validation
+    const parsedAge =
+      typeof body.age === "number"
+        ? body.age
+        : parseInt(String(body.age || "30"), 10) || 30;
+
+    // Unique ABHA / ID generator to avoid UNIQUE constraint failed
+    const uniqueAbha =
+      body.abhaId && String(body.abhaId).trim() !== ""
+        ? body.abhaId
+        : `ABHA-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 1000)}`;
+
+    // Build data payload safely
+    const payload: Record<string, any> = {
+      name: body.name || "Emergency Patient",
+      age: parsedAge,
+      gender: body.gender || "Male",
+      contact: body.contact || body.phone || "9876543210",
+      bloodGroup: body.bloodGroup || "O+",
+      abhaId: uniqueAbha,
+      complaint: body.complaint || "CODE RED STAT EMERGENCY",
+      diagnosis: body.diagnosis || "Critical Triage",
+      vitals:
+        typeof body.vitals === "object"
+          ? JSON.stringify(body.vitals)
+          : body.vitals || "BP: 120/80 | HR: 98 | SpO2: 98%",
+      treatment: body.treatment || "Immediate Bed Matrix Observation",
+      bedNumber: body.bedNumber || "TRAUMA-RESUS-02",
+      status: body.status || "Admitted",
+    };
+
+    // Save to Prisma SQLite/PostgreSQL
+    const createdPatient = await patientModel.create({
+      data: payload,
     });
-    return NextResponse.json(newPatient);
-  } catch (error) {
-    console.error("POST /api/patients error:", error);
-    return NextResponse.json({ success: true, fallback: true });
+
+    console.log("✅ Successfully saved to Prisma DB:", createdPatient.id);
+    return NextResponse.json(createdPatient, { status: 201 });
+  } catch (error: any) {
+    console.error("❌ Prisma POST Error details:", error);
+    // Agar Prisma validation fail ho, toh frontend ko pata chale
+    return NextResponse.json(
+      {
+        error: "Failed to persist to Prisma database",
+        details: error?.message || String(error),
+      },
+      { status: 500 }
+    );
   }
 }
 
@@ -60,17 +107,19 @@ export async function DELETE(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
-    if (!id) return NextResponse.json({ error: "Missing ID" }, { status: 400 });
+    if (!id) {
+      return NextResponse.json({ error: "Missing ID" }, { status: 400 });
+    }
 
-    const patientModel = db?.patient || db?.Patient;
+    const patientModel = getPatientModel();
     if (patientModel) {
       await patientModel.delete({
         where: { id },
       });
     }
     return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error("DELETE /api/patients error:", error);
-    return NextResponse.json({ success: true });
+  } catch (error: any) {
+    console.error("❌ DELETE /api/patients error:", error?.message || error);
+    return NextResponse.json({ error: error?.message }, { status: 500 });
   }
 }
