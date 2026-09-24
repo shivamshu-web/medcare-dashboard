@@ -1,20 +1,78 @@
-generator client {
-  provider = "prisma-client-js"
-}
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
+
+generator client {
+  provider = "prisma-client-js"
+}
+
 model Patient {
+  id         String   @id @default(uuid())
+  name       String
+  age        Int
+  gender     String
+  contact    String?
+  bloodGroup String?
+  abhaId     String   @unique
+  complaint  String?
+  diagnosis  String?
+  vitals     String?
+  treatment  String?
+  bedNumber  String?
+  status     String?
+  createdAt  DateTime @default(now())
+}
+
+model Appointment {
+  id        String   @id @default(uuid())
+  patient   String
+  doctor    String
+  time      String
+  type      String
+  status    String
+  createdAt DateTime @default(now())
+}
+
+model LabItem {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  test      String
+  patient   String
+  doctor    String
+  status    String
+  tat       String
+  createdAt DateTime @default(now())
+}
+
+model Medicine {
+  id         String   @id @default(uuid())
+  name       String
+  genericName String
+  category   String
+  batch      String
+  stock      Int
+  unitPrice  Float
+  expiry     String
+  createdAt  DateTime @default(now())
+}
+
+model Bed {
   id          String   @id @default(uuid())
-  name        String
-  abhaId      String   @unique
-  age         Int
-  gender      String
-  bp          String
-  pulse       String
-  temperature String
-  symptoms    String   // Comma-separated tags
-  caseNotes   String
-  createdAt   DateTime @default(now())
+  ward        String
+  number      String   @unique
+  status      String
+  patientName String?
+  abhaId      String?
+  admitTime   String?
+  updatedAt   DateTime @updatedAt
+}
+
+model BloodStock {
+  id                String   @id @default(uuid())
+  group             String   @unique
+  unitsAvailable    Int
+  criticalThreshold Int
+  lastTested        String
+  updatedAt         DateTime @updatedAt
 }

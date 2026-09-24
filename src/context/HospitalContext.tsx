@@ -4,6 +4,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import type { PatientData } from "@/components/dashboard/PatientProfileView";
 
 export interface LabItem {
+  id?: string;
   token: string;
   test: string;
   patient: string;
@@ -34,15 +35,16 @@ export interface MedicineItem {
 
 export interface BedItem {
   id: string;
-  ward: "ICU" | "General" | "Emergency" | "Private";
+  ward: "ICU" | "General" | "Emergency" | "Private" | string;
   number: string;
-  status: "Available" | "Occupied" | "Cleaning";
-  patientName?: string;
-  abhaId?: string;
-  admitTime?: string;
+  status: "Available" | "Occupied" | "Cleaning" | string;
+  patientName?: string | null;
+  abhaId?: string | null;
+  admitTime?: string | null;
 }
 
 export interface BloodUnitItem {
+  id?: string;
   group: "A+" | "A-" | "B+" | "B-" | "AB+" | "AB-" | "O+" | "O-";
   unitsAvailable: number;
   criticalThreshold: number;
@@ -76,241 +78,78 @@ interface HospitalContextType {
 
 const HospitalContext = createContext<HospitalContextType | undefined>(undefined);
 
-// Initial Clean Fallback Patients
-const DEFAULT_PATIENTS: PatientData[] = [
-  {
-    id: "PAT-1001",
-    name: "Aarav Sharma",
-    age: 28,
-    gender: "Male",
-    abhaId: "91-0021-3941-8910",
-    bp: "120/80",
-    pulse: 74,
-    temperature: "98.4",
-    symptoms: "Mild fever and sore throat",
-    caseNotes: "Prescribed basic antipyretic. Rest advised.",
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: "PAT-1002",
-    name: "Sunita Devi",
-    age: 52,
-    gender: "Female",
-    abhaId: "91-4451-2291-7782",
-    bp: "140/90",
-    pulse: 82,
-    temperature: "98.6",
-    symptoms: "Chronic joint stiffness and mild hypertension",
-    caseNotes: "Advised regular BP monitoring and salt restriction.",
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: "PAT-1003",
-    name: "Rajeshwar Singh",
-    age: 61,
-    gender: "Male",
-    abhaId: "91-8842-1092-4411",
-    bp: "150/95",
-    pulse: 88,
-    temperature: "99.1",
-    symptoms: "Chest heaviness and dyspnea on exertion",
-    caseNotes: "Advised ECG, lipid panel, and cardiology consultation.",
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: "PAT-1004",
-    name: "Vikram Malhotra",
-    age: 44,
-    gender: "Male",
-    abhaId: "91-9981-6652-3310",
-    bp: "125/82",
-    pulse: 76,
-    temperature: "98.6",
-    symptoms: "Productive cough and mild wheezing",
-    caseNotes: "Chest clear. Prescribed bronchodilator syrup and steam.",
-    createdAt: new Date().toISOString(),
-  }
-];
-
 export function HospitalProvider({ children }: { children: React.ReactNode }) {
-  const [patients, setPatients] = useState<PatientData[]>(DEFAULT_PATIENTS);
+  // Pure dynamic states directly connected to SQL Database
+  const [patients, setPatients] = useState<PatientData[]>([]);
+  const [appointments, setAppointments] = useState<AppointmentItem[]>([]);
+  const [labQueue, setLabQueue] = useState<LabItem[]>([]);
+  const [inventory, setInventory] = useState<MedicineItem[]>([]);
+  const [beds, setBeds] = useState<BedItem[]>([]);
+  const [bloodStock, setBloodStock] = useState<BloodUnitItem[]>([]);
+
   const [loading, setLoading] = useState(false);
   const [revenue, setRevenue] = useState(842500);
   const [activeEmergency, setActiveEmergency] = useState(false);
 
-  // Original Appointments List
-  const [appointments, setAppointments] = useState<AppointmentItem[]>([
-    { id: "APT-101", patient: "Aarav Sharma", doctor: "Dr. Sourav", time: "10:30 AM", type: "General OPD", status: "Confirmed" },
-    { id: "APT-102", patient: "Priya Mukherjee", doctor: "Dr. Anjali Rao", time: "11:15 AM", type: "Follow-up", status: "In Progress" },
-    { id: "APT-103", patient: "Rajeshwar Singh", doctor: "Dr. Sourav", time: "12:00 PM", type: "Cardiology Consult", status: "Confirmed" },
-    { id: "APT-104", patient: "Sunita Devi", doctor: "Dr. Verma", time: "02:30 PM", type: "Pathology Review", status: "Pending" },
-    { id: "APT-105", patient: "Vikram Malhotra", doctor: "Dr. Sourav", time: "04:00 PM", type: "Pulmonology", status: "Confirmed" },
-  ]);
-
-  // Original Lab Queue
-  const [labQueue, setLabQueue] = useState<LabItem[]>([
-    { token: "LAB-401", test: "Complete Blood Count (CBC)", patient: "Sunita Devi", doctor: "Dr. Sourav", status: "Sample Collected", tat: "45 mins" },
-    { token: "LAB-402", test: "Lipid Profile & Serum Creatinine", patient: "Rajeshwar Singh", doctor: "Dr. Sourav", status: "Analysis Complete", tat: "Ready" },
-    { token: "LAB-403", test: "Dengue NS1 Antigen Assay", patient: "Aarav Sharma", doctor: "Dr. Anjali", status: "Processing", tat: "1.5 hrs" },
-  ]);
-
-  // 20 Complete Pharmacy Inventory Medicines
-  const [inventory, setInventory] = useState<MedicineItem[]>([
-    { id: "M-01", name: "Dolo 650mg", genericName: "Paracetamol", category: "Tablet", batch: "BATCH-891", stock: 320, unitPrice: 32, expiry: "12/2027" },
-    { id: "M-02", name: "Augmentin 625 Duo", genericName: "Amoxicillin + Clavulanate", category: "Tablet", batch: "BATCH-442", stock: 18, unitPrice: 195, expiry: "08/2026" },
-    { id: "M-03", name: "Azithral 500mg", genericName: "Azithromycin", category: "Tablet", batch: "BATCH-501", stock: 42, unitPrice: 120, expiry: "11/2026" },
-    { id: "M-04", name: "Pan 40mg Injection", genericName: "Pantoprazole Sodium", category: "Injection", batch: "BATCH-331", stock: 24, unitPrice: 55, expiry: "09/2027" },
-    { id: "M-05", name: "Allegra 120mg", genericName: "Fexofenadine HCl", category: "Tablet", batch: "BATCH-119", stock: 180, unitPrice: 185, expiry: "04/2028" },
-    { id: "M-06", name: "Ascoril-D Cough Syrup", genericName: "Dextromethorphan + Phenylephrine", category: "Syrup", batch: "BATCH-703", stock: 65, unitPrice: 140, expiry: "01/2027" },
-    { id: "M-07", name: "Normal Saline (0.9% NS)", genericName: "Sodium Chloride IV", category: "IV Fluid", batch: "BATCH-108", stock: 85, unitPrice: 60, expiry: "10/2028" },
-    { id: "M-08", name: "Electral Energy Sachet", genericName: "WHO Oral Rehydration Salts", category: "Sachet", batch: "BATCH-902", stock: 520, unitPrice: 22, expiry: "05/2028" },
-    { id: "M-09", name: "Monocef 1g IV/IM", genericName: "Ceftriaxone Injection", category: "Injection", batch: "BATCH-612", stock: 32, unitPrice: 78, expiry: "07/2027" },
-    { id: "M-10", name: "Metrogyl 400mg", genericName: "Metronidazole", category: "Tablet", batch: "BATCH-215", stock: 240, unitPrice: 24, expiry: "03/2028" },
-    { id: "M-11", name: "Ringer Lactate (RL 500ml)", genericName: "Compound Sodium Lactate IV", category: "IV Fluid", batch: "BATCH-504", stock: 75, unitPrice: 72, expiry: "06/2028" },
-    { id: "M-12", name: "Dynapar AQ 75mg", genericName: "Diclofenac Sodium 1ml", category: "Injection", batch: "BATCH-774", stock: 50, unitPrice: 38, expiry: "11/2027" },
-    { id: "M-13", name: "Emeset 4mg", genericName: "Ondansetron Injection", category: "Injection", batch: "BATCH-542", stock: 65, unitPrice: 28, expiry: "05/2027" },
-    { id: "M-14", name: "Deriphyllin Injection", genericName: "Theophylline + Etofylline 2ml", category: "Injection", batch: "BATCH-334", stock: 40, unitPrice: 22, expiry: "08/2027" },
-    { id: "M-15", name: "Tramadol 50mg/ml", genericName: "Tramadol HCl STAT Ampoule", category: "Injection", batch: "BATCH-902", stock: 28, unitPrice: 65, expiry: "03/2027" },
-    { id: "M-16", name: "Glycomet-GP 1 Forte", genericName: "Metformin 1000mg + Glimepiride", category: "Tablet", batch: "BATCH-677", stock: 190, unitPrice: 145, expiry: "09/2028" },
-    { id: "M-17", name: "Telma 40", genericName: "Telmisartan 40mg", category: "Tablet", batch: "BATCH-431", stock: 210, unitPrice: 110, expiry: "12/2027" },
-    { id: "M-18", name: "Atorva 20mg", genericName: "Atorvastatin Calcium", category: "Tablet", batch: "BATCH-229", stock: 135, unitPrice: 175, expiry: "10/2027" },
-    { id: "M-19", name: "Combiflam", genericName: "Ibuprofen + Paracetamol", category: "Tablet", batch: "BATCH-890", stock: 260, unitPrice: 42, expiry: "02/2028" },
-    { id: "M-20", name: "Adrenaline 1:1000", genericName: "Epinephrine 1mg STAT Ampoule", category: "Injection", batch: "BATCH-007", stock: 16, unitPrice: 45, expiry: "04/2027" },
-  ]);
-
-  // Original Complete 9 Beds
-  const [beds, setBeds] = useState<BedItem[]>([
-    { id: "B-101", ward: "Emergency", number: "ER-01", status: "Occupied", patientName: "Aarav Sharma", abhaId: "91-0021-3941-8910", admitTime: "08:15 AM" },
-    { id: "B-102", ward: "Emergency", number: "ER-02", status: "Available" },
-    { id: "B-103", ward: "ICU", number: "ICU-01", status: "Occupied", patientName: "Rajeshwar Singh", abhaId: "91-8842-1092-4411", admitTime: "04:30 AM" },
-    { id: "B-104", ward: "ICU", number: "ICU-02", status: "Cleaning" },
-    { id: "B-105", ward: "General", number: "GEN-01", status: "Occupied", patientName: "Sunita Devi", abhaId: "91-4451-2291-7782", admitTime: "Yesterday" },
-    { id: "B-106", ward: "General", number: "GEN-02", status: "Available" },
-    { id: "B-107", ward: "General", number: "GEN-03", status: "Available" },
-    { id: "B-108", ward: "Private", number: "PVT-101", status: "Occupied", patientName: "Vikram Malhotra", abhaId: "91-9981-6652-3310", admitTime: "09:45 AM" },
-    { id: "B-109", ward: "Private", number: "PVT-102", status: "Available" },
-  ]);
-
-  // Original 8 Blood Groups
-  const [bloodStock, setBloodStock] = useState<BloodUnitItem[]>([
-    { group: "A+", unitsAvailable: 14, criticalThreshold: 5, lastTested: "Today 06:00 AM" },
-    { group: "A-", unitsAvailable: 3, criticalThreshold: 4, lastTested: "Yesterday" },
-    { group: "B+", unitsAvailable: 18, criticalThreshold: 5, lastTested: "Today 08:30 AM" },
-    { group: "B-", unitsAvailable: 2, criticalThreshold: 3, lastTested: "Yesterday" },
-    { group: "AB+", unitsAvailable: 9, criticalThreshold: 3, lastTested: "Today 09:15 AM" },
-    { group: "AB-", unitsAvailable: 1, criticalThreshold: 2, lastTested: "10 Sep" },
-    { group: "O+", unitsAvailable: 22, criticalThreshold: 8, lastTested: "Today 07:00 AM" },
-    { group: "O-", unitsAvailable: 4, criticalThreshold: 5, lastTested: "Today 04:00 AM" },
-  ]);
-
-  // LIVE CENTRAL CLOUD FETCH (Bypass Browser Cache)
-  const fetchPatients = useCallback(async () => {
-    setLoading(true);
+  // Central Database Fetch Function (Neon SQL)
+  const syncHospitalState = useCallback(async () => {
     try {
-      const res = await fetch("/api/patients", {
+      const res = await fetch("/api/hospital-state", {
         cache: "no-store",
         headers: { "Cache-Control": "no-cache" },
       });
       if (res.ok) {
         const data = await res.json();
-        if (Array.isArray(data) && data.length > 0) {
-          setPatients(data);
-          try {
-            localStorage.setItem("medcare_clinical_patients", JSON.stringify(data));
-          } catch (e) {}
-          return;
-        }
+        if (data.patients) setPatients(data.patients);
+        if (data.appointments) setAppointments(data.appointments);
+        if (data.labQueue) setLabQueue(data.labQueue);
+        if (data.inventory) setInventory(data.inventory);
+        if (data.beds) setBeds(data.beds);
+        if (data.bloodStock) setBloodStock(data.bloodStock);
       }
-    } catch (e) {
-      console.warn("API fallback to local persistence", e);
-    } finally {
-      setLoading(false);
+    } catch (err) {
+      console.warn("SQL Fetch polling error:", err);
     }
-
-    // Local fallback only if API fails
-    try {
-      const stored = localStorage.getItem("medcare_clinical_patients");
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) setPatients(parsed);
-      }
-    } catch (e) {}
   }, []);
 
+  // 1. Initial Load + 4-Second Live Polling (Sync between Laptop and Phone)
   useEffect(() => {
-    fetchPatients();
-  }, [fetchPatients]);
+    syncHospitalState();
+    const interval = setInterval(syncHospitalState, 4000);
+    return () => clearInterval(interval);
+  }, [syncHospitalState]);
 
-  // CENTRAL REAL-TIME PATIENT REGISTRATION
+  // Central Patient Addition
   const addPatient = async (newPt: PatientData): Promise<boolean> => {
-    // 1. Optimistic Update (Immediate UI response)
-    setPatients((prev) => {
-      const updated = [newPt, ...prev.filter((p) => p.id !== newPt.id)];
-      try {
-        localStorage.setItem("medcare_clinical_patients", JSON.stringify(updated));
-      } catch (e) {}
-      return updated;
-    });
-
-    // 2. Automated OPD Appointment Entry
-    const newApt: AppointmentItem = {
-      id: `APT-${Math.floor(100 + Math.random() * 900)}`,
-      patient: newPt.name,
-      doctor: "Dr. Sourav",
-      time: "Just Now",
-      type: "OPD Intake",
-      status: "In Progress",
-    };
-    setAppointments((prev) => [newApt, ...prev]);
-
-    // 3. Automated Lab Triage
-    const sym = (newPt.symptoms || "").toLowerCase();
-    let assignedTest = "Complete Diagnostic Panel";
-    if (sym.includes("fever") || sym.includes("pyrexia")) assignedTest = "CBC & Viral Serology Screen";
-    else if (sym.includes("chest") || sym.includes("heart") || sym.includes("bp")) assignedTest = "Cardiac Biomarkers & ECG";
-    else if (sym.includes("cough")) assignedTest = "Sputum & CRP Inflammatory Index";
-
-    const newLab: LabItem = {
-      token: `LAB-${Math.floor(400 + Math.random() * 500)}`,
-      test: assignedTest,
-      patient: newPt.name,
-      doctor: "Dr. Sourav",
-      status: "Processing",
-      tat: "30 mins",
-    };
-    setLabQueue((prev) => [newLab, ...prev]);
-    setRevenue((prev) => prev + 500);
-
-    // 4. Guaranteed Cloud Database Sync (/api/patients)
     try {
       const res = await fetch("/api/patients", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(newPt),
       });
+
       if (res.ok) {
-        // Sync with authoritative cloud data
-        await fetchPatients();
+        await syncHospitalState();
+        return true;
       }
     } catch (err) {
-      console.warn("Database post sync warning:", err);
+      console.error("Failed to persist patient to DB:", err);
     }
-
-    return true;
+    return false;
   };
 
   const registerNewPatientWorkflow = (newPt: PatientData) => {
     addPatient(newPt);
   };
 
-  const triggerEmergencyTriage = (traumaType: string, age: number, gender: string, notes: string) => {
+  const triggerEmergencyTriage = async (traumaType: string, age: number, gender: string, notes: string) => {
     const traumaId = `TRAUMA-${Math.floor(1000 + Math.random() * 9000)}`;
     const patientIdentifier = `RED-CODE (${traumaType})`;
 
     const emergencyPt: PatientData = {
       id: traumaId,
       name: `${patientIdentifier} [${gender.charAt(0)}/${age}Y]`,
-      abhaId: "EMERGENCY-FAST-TRACK",
+      abhaId: `91-RED-${Date.now().toString().slice(-6)}`,
       age,
       gender,
       bp: "Unstable (STAT)",
@@ -321,108 +160,129 @@ export function HospitalProvider({ children }: { children: React.ReactNode }) {
       createdAt: new Date().toISOString(),
     };
 
-    addPatient(emergencyPt);
-
-    setBeds((prev) => {
-      let bedAssigned = false;
-      return prev.map((b) => {
-        if (!bedAssigned && b.ward === "Emergency" && b.status === "Available") {
-          bedAssigned = true;
-          return {
-            ...b,
-            status: "Occupied",
-            patientName: patientIdentifier,
-            abhaId: traumaId,
-            admitTime: "STAT NOW",
-          };
-        }
-        return b;
-      });
-    });
-
-    const statLab: LabItem = {
-      token: `STAT-${Math.floor(800 + Math.random() * 199)}`,
-      test: "STAT Trauma Panel: ABG, Crossmatch & Troponin-I",
-      patient: patientIdentifier,
-      doctor: "ER Resus Team",
-      status: "CRITICAL PRIORITY",
-      tat: "10 mins STAT",
-    };
-    setLabQueue((prev) => [statLab, ...prev]);
-
     setActiveEmergency(true);
     setRevenue((prev) => prev + 2500);
+    await addPatient(emergencyPt);
   };
 
   const dismissEmergency = () => {
     setActiveEmergency(false);
   };
 
-  const dispensePrescription = (medId: string) => {
+  const dispensePrescription = async (medId: string) => {
     const target = inventory.find((m) => m.id === medId);
     if (!target || target.stock <= 0) return;
 
+    const newStock = target.stock - 1;
     setInventory((prev) =>
-      prev.map((item) =>
-        item.id === medId ? { ...item, stock: item.stock - 1 } : item
-      )
+      prev.map((item) => (item.id === medId ? { ...item, stock: newStock } : item))
     );
     setRevenue((prev) => prev + target.unitPrice);
+
+    await fetch("/api/hospital-state", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "UPDATE_STOCK", payload: { id: medId, stock: newStock } }),
+    });
   };
 
-  const restockMedicine = (medId: string, qty = 50) => {
+  const restockMedicine = async (medId: string, qty = 50) => {
+    const target = inventory.find((m) => m.id === medId);
+    if (!target) return;
+
+    const newStock = target.stock + qty;
     setInventory((prev) =>
-      prev.map((item) =>
-        item.id === medId ? { ...item, stock: item.stock + qty } : item
-      )
+      prev.map((item) => (item.id === medId ? { ...item, stock: newStock } : item))
     );
+
+    await fetch("/api/hospital-state", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "UPDATE_STOCK", payload: { id: medId, stock: newStock } }),
+    });
   };
 
-  const updateLabStatus = (token: string, newStatus: string) => {
+  const updateLabStatus = async (token: string, newStatus: string) => {
     setLabQueue((prev) =>
       prev.map((l) => (l.token === token ? { ...l, status: newStatus } : l))
     );
+
+    await fetch("/api/hospital-state", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "UPDATE_LAB", payload: { token, status: newStatus } }),
+    });
   };
 
-  const admitPatientToBed = (bedId: string, patientName: string, abhaId: string) => {
+  const admitPatientToBed = async (bedId: string, patientName: string, abhaId: string) => {
+    const dataUpdate: Partial<BedItem> = {
+      status: "Occupied",
+      patientName,
+      abhaId,
+      admitTime: "Just Now",
+    };
+
     setBeds((prev) =>
-      prev.map((b) =>
-        b.id === bedId
-          ? {
-              ...b,
-              status: "Occupied",
-              patientName,
-              abhaId,
-              admitTime: "Just Now",
-            }
-          : b
-      )
+      prev.map((b) => (b.id === bedId ? { ...b, ...dataUpdate } : b))
     );
     setRevenue((prev) => prev + 1500);
+
+    try {
+      await fetch("/api/hospital-state", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "UPDATE_BED", payload: { id: bedId, data: dataUpdate } }),
+      });
+    } catch (e) {
+      console.warn("Failed to sync bed status to API:", e);
+    }
   };
 
-  const dischargeBed = (bedId: string) => {
+  const dischargeBed = async (bedId: string) => {
+    const dataUpdate: Partial<BedItem> = {
+      status: "Cleaning",
+      patientName: null,
+      abhaId: null,
+      admitTime: null,
+    };
+
     setBeds((prev) =>
-      prev.map((b) =>
-        b.id === bedId
-          ? {
-              ...b,
-              status: "Cleaning",
-              patientName: undefined,
-              abhaId: undefined,
-              admitTime: undefined,
-            }
-          : b
-      )
+      prev.map((b) => (b.id === bedId ? { ...b, ...dataUpdate } : b))
     );
+
+    try {
+      await fetch("/api/hospital-state", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "UPDATE_BED", payload: { id: bedId, data: dataUpdate } }),
+      });
+    } catch (e) {
+      console.warn("Failed to sync bed discharge to API:", e);
+    }
   };
 
-  const sanitizeBed = (bedId: string) => {
+  const sanitizeBed = async (bedId: string) => {
+    const dataUpdate: Partial<BedItem> = {
+      status: "Available",
+      patientName: null,
+      abhaId: null,
+      admitTime: null,
+    };
+
     setBeds((prev) =>
-      prev.map((b) => (b.id === bedId ? { ...b, status: "Available" } : b))
+      prev.map((b) => (b.id === bedId ? { ...b, ...dataUpdate } : b))
     );
-  };
 
+    try {
+      await fetch("/api/hospital-state", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "UPDATE_BED", payload: { id: bedId, data: dataUpdate } }),
+      });
+    } catch (e) {
+      console.warn("Failed to sync bed sanitization to API:", e);
+    }
+  };
   const requestBloodCrossmatch = (patientName: string, bloodGroup: string, units: number) => {
     setBloodStock((prev) =>
       prev.map((b) =>
@@ -431,16 +291,6 @@ export function HospitalProvider({ children }: { children: React.ReactNode }) {
           : b
       )
     );
-
-    const crossmatchLab: LabItem = {
-      token: `XM-${Math.floor(700 + Math.random() * 200)}`,
-      test: `STAT Crossmatch & Coombs (${bloodGroup} - ${units} Unit)`,
-      patient: patientName,
-      doctor: "Transfusion Medicine",
-      status: "Processing",
-      tat: "15 mins STAT",
-    };
-    setLabQueue((prev) => [crossmatchLab, ...prev]);
     setRevenue((prev) => prev + units * 1200);
   };
 
@@ -457,7 +307,7 @@ export function HospitalProvider({ children }: { children: React.ReactNode }) {
         loading,
         activeEmergency,
         dismissEmergency,
-        refreshPatients: fetchPatients,
+        refreshPatients: syncHospitalState,
         addPatient,
         registerNewPatient: addPatient,
         registerNewPatientWorkflow,
