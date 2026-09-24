@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
 import type { PatientData } from "@/components/dashboard/PatientProfileView";
 
 export interface LabItem {
@@ -76,79 +76,69 @@ interface HospitalContextType {
 
 const HospitalContext = createContext<HospitalContextType | undefined>(undefined);
 
-export function HospitalProvider({ children }: { children: React.ReactNode }) {
-  // Safe Persistent Patient State
-  const [patients, setPatients] = useState<PatientData[]>(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const stored = localStorage.getItem("medcare_clinical_patients");
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-        }
-      } catch (e) {}
-    }
-    return [
-      {
-        id: "PAT-1001",
-        name: "Aarav Sharma",
-        age: 28,
-        gender: "Male",
-        abhaId: "91-0021-3941-8910",
-        bp: "120/80",
-        pulse: 74,
-        temperature: "98.4",
-        symptoms: "Mild fever and sore throat",
-        caseNotes: "Prescribed basic antipyretic. Rest advised.",
-        createdAt: new Date().toISOString(),
-      },
-      {
-        id: "PAT-1002",
-        name: "Sunita Devi",
-        age: 52,
-        gender: "Female",
-        abhaId: "91-4451-2291-7782",
-        bp: "140/90",
-        pulse: 82,
-        temperature: "98.6",
-        symptoms: "Chronic joint stiffness and mild hypertension",
-        caseNotes: "Advised regular BP monitoring and salt restriction.",
-        createdAt: new Date().toISOString(),
-      },
-      {
-        id: "PAT-1003",
-        name: "Rajeshwar Singh",
-        age: 61,
-        gender: "Male",
-        abhaId: "91-8842-1092-4411",
-        bp: "150/95",
-        pulse: 88,
-        temperature: "99.1",
-        symptoms: "Chest heaviness and dyspnea on exertion",
-        caseNotes: "Advised ECG, lipid panel, and cardiology consultation.",
-        createdAt: new Date().toISOString(),
-      },
-      {
-        id: "PAT-1004",
-        name: "Vikram Malhotra",
-        age: 44,
-        gender: "Male",
-        abhaId: "91-9981-6652-3310",
-        bp: "125/82",
-        pulse: 76,
-        temperature: "98.6",
-        symptoms: "Productive cough and mild wheezing",
-        caseNotes: "Chest clear. Prescribed bronchodilator syrup and steam.",
-        createdAt: new Date().toISOString(),
-      }
-    ];
-  });
+// Initial Clean Fallback Patients
+const DEFAULT_PATIENTS: PatientData[] = [
+  {
+    id: "PAT-1001",
+    name: "Aarav Sharma",
+    age: 28,
+    gender: "Male",
+    abhaId: "91-0021-3941-8910",
+    bp: "120/80",
+    pulse: 74,
+    temperature: "98.4",
+    symptoms: "Mild fever and sore throat",
+    caseNotes: "Prescribed basic antipyretic. Rest advised.",
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: "PAT-1002",
+    name: "Sunita Devi",
+    age: 52,
+    gender: "Female",
+    abhaId: "91-4451-2291-7782",
+    bp: "140/90",
+    pulse: 82,
+    temperature: "98.6",
+    symptoms: "Chronic joint stiffness and mild hypertension",
+    caseNotes: "Advised regular BP monitoring and salt restriction.",
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: "PAT-1003",
+    name: "Rajeshwar Singh",
+    age: 61,
+    gender: "Male",
+    abhaId: "91-8842-1092-4411",
+    bp: "150/95",
+    pulse: 88,
+    temperature: "99.1",
+    symptoms: "Chest heaviness and dyspnea on exertion",
+    caseNotes: "Advised ECG, lipid panel, and cardiology consultation.",
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: "PAT-1004",
+    name: "Vikram Malhotra",
+    age: 44,
+    gender: "Male",
+    abhaId: "91-9981-6652-3310",
+    bp: "125/82",
+    pulse: 76,
+    temperature: "98.6",
+    symptoms: "Productive cough and mild wheezing",
+    caseNotes: "Chest clear. Prescribed bronchodilator syrup and steam.",
+    createdAt: new Date().toISOString(),
+  }
+];
 
+export function HospitalProvider({ children }: { children: React.ReactNode }) {
+  const [patients, setPatients] = useState<PatientData[]>(DEFAULT_PATIENTS);
   const [loading, setLoading] = useState(false);
   const [revenue, setRevenue] = useState(842500);
   const [activeEmergency, setActiveEmergency] = useState(false);
 
-  // Original Complete Appointments List
+  // Original Appointments List
   const [appointments, setAppointments] = useState<AppointmentItem[]>([
     { id: "APT-101", patient: "Aarav Sharma", doctor: "Dr. Sourav", time: "10:30 AM", type: "General OPD", status: "Confirmed" },
     { id: "APT-102", patient: "Priya Mukherjee", doctor: "Dr. Anjali Rao", time: "11:15 AM", type: "Follow-up", status: "In Progress" },
@@ -157,7 +147,7 @@ export function HospitalProvider({ children }: { children: React.ReactNode }) {
     { id: "APT-105", patient: "Vikram Malhotra", doctor: "Dr. Sourav", time: "04:00 PM", type: "Pulmonology", status: "Confirmed" },
   ]);
 
-  // Original Complete Lab Queue
+  // Original Lab Queue
   const [labQueue, setLabQueue] = useState<LabItem[]>([
     { token: "LAB-401", test: "Complete Blood Count (CBC)", patient: "Sunita Devi", doctor: "Dr. Sourav", status: "Sample Collected", tat: "45 mins" },
     { token: "LAB-402", test: "Lipid Profile & Serum Creatinine", patient: "Rajeshwar Singh", doctor: "Dr. Sourav", status: "Analysis Complete", tat: "Ready" },
@@ -188,7 +178,7 @@ export function HospitalProvider({ children }: { children: React.ReactNode }) {
     { id: "M-20", name: "Adrenaline 1:1000", genericName: "Epinephrine 1mg STAT Ampoule", category: "Injection", batch: "BATCH-007", stock: 16, unitPrice: 45, expiry: "04/2027" },
   ]);
 
-  // Original Complete 9 Beds Across 4 Wards
+  // Original Complete 9 Beds
   const [beds, setBeds] = useState<BedItem[]>([
     { id: "B-101", ward: "Emergency", number: "ER-01", status: "Occupied", patientName: "Aarav Sharma", abhaId: "91-0021-3941-8910", admitTime: "08:15 AM" },
     { id: "B-102", ward: "Emergency", number: "ER-02", status: "Available" },
@@ -201,7 +191,7 @@ export function HospitalProvider({ children }: { children: React.ReactNode }) {
     { id: "B-109", ward: "Private", number: "PVT-102", status: "Available" },
   ]);
 
-  // Original Complete 8 Blood Groups
+  // Original 8 Blood Groups
   const [bloodStock, setBloodStock] = useState<BloodUnitItem[]>([
     { group: "A+", unitsAvailable: 14, criticalThreshold: 5, lastTested: "Today 06:00 AM" },
     { group: "A-", unitsAvailable: 3, criticalThreshold: 4, lastTested: "Yesterday" },
@@ -213,10 +203,14 @@ export function HospitalProvider({ children }: { children: React.ReactNode }) {
     { group: "O-", unitsAvailable: 4, criticalThreshold: 5, lastTested: "Today 04:00 AM" },
   ]);
 
-  const fetchPatients = async () => {
+  // LIVE CENTRAL CLOUD FETCH (Bypass Browser Cache)
+  const fetchPatients = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/patients");
+      const res = await fetch("/api/patients", {
+        cache: "no-store",
+        headers: { "Cache-Control": "no-cache" },
+      });
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data) && data.length > 0) {
@@ -224,22 +218,32 @@ export function HospitalProvider({ children }: { children: React.ReactNode }) {
           try {
             localStorage.setItem("medcare_clinical_patients", JSON.stringify(data));
           } catch (e) {}
+          return;
         }
       }
     } catch (e) {
-      console.warn("API fallback to local persistence");
+      console.warn("API fallback to local persistence", e);
     } finally {
       setLoading(false);
     }
-  };
+
+    // Local fallback only if API fails
+    try {
+      const stored = localStorage.getItem("medcare_clinical_patients");
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) setPatients(parsed);
+      }
+    } catch (e) {}
+  }, []);
 
   useEffect(() => {
     fetchPatients();
-  }, []);
+  }, [fetchPatients]);
 
-  // Central Fix: Direct Save to Patients State + Storage + API + OPD Workflow
+  // CENTRAL REAL-TIME PATIENT REGISTRATION
   const addPatient = async (newPt: PatientData): Promise<boolean> => {
-    // 1. Direct State Insertion (Dashboard table me turant sabse upar dikhega)
+    // 1. Optimistic Update (Immediate UI response)
     setPatients((prev) => {
       const updated = [newPt, ...prev.filter((p) => p.id !== newPt.id)];
       try {
@@ -277,15 +281,19 @@ export function HospitalProvider({ children }: { children: React.ReactNode }) {
     setLabQueue((prev) => [newLab, ...prev]);
     setRevenue((prev) => prev + 500);
 
-    // 4. Background Database Commit (/api/patients)
+    // 4. Guaranteed Cloud Database Sync (/api/patients)
     try {
-      await fetch("/api/patients", {
+      const res = await fetch("/api/patients", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(newPt),
       });
+      if (res.ok) {
+        // Sync with authoritative cloud data
+        await fetchPatients();
+      }
     } catch (err) {
-      console.warn("Database post non-blocking warning:", err);
+      console.warn("Database post sync warning:", err);
     }
 
     return true;
@@ -307,7 +315,7 @@ export function HospitalProvider({ children }: { children: React.ReactNode }) {
       gender,
       bp: "Unstable (STAT)",
       pulse: 135,
-      temperature: 99.1,
+      temperature: "99.1",
       symptoms: `ACUTE RED CODE: ${traumaType}. ${notes}`,
       caseNotes: `STAT PROTOCOL ACTIVATED: Immediate resuscitation line established. Priority Level 1 Triage.`,
       createdAt: new Date().toISOString(),
