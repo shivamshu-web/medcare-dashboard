@@ -63,10 +63,10 @@ interface HospitalContextType {
   activeEmergency: boolean;
   dismissEmergency: () => void;
   refreshPatients: () => Promise<void>;
-  addPatient: (newPt: PatientData) => Promise<boolean>;
-  registerNewPatient: (newPt: PatientData) => Promise<boolean>;
-  registerNewPatientWorkflow: (newPt: PatientData) => void;
-  triggerEmergencyTriage: (traumaType: string, age: number, gender: string, notes: string) => void;
+  addPatient: (newPt: any) => Promise<any>;
+  registerNewPatient: (newPt: any) => Promise<any>;
+  registerNewPatientWorkflow: (newPt: any) => Promise<any>;
+  triggerEmergencyTriage: (traumaTypeOrData: any, age?: number, gender?: string, notes?: string) => Promise<any>;
   dispensePrescription: (medId: string) => void;
   restockMedicine: (medId: string, qty?: number) => void;
   updateLabStatus: (token: string, newStatus: string) => void;
@@ -79,7 +79,7 @@ interface HospitalContextType {
 const HospitalContext = createContext<HospitalContextType | undefined>(undefined);
 
 export function HospitalProvider({ children }: { children: React.ReactNode }) {
-  // Pure dynamic states directly connected to SQL Database
+  // Pure dynamic states directly connected to Neon Cloud DB
   const [patients, setPatients] = useState<PatientData[]>([]);
   const [appointments, setAppointments] = useState<AppointmentItem[]>([]);
   const [labQueue, setLabQueue] = useState<LabItem[]>([]);
@@ -91,35 +91,12 @@ export function HospitalProvider({ children }: { children: React.ReactNode }) {
   const [revenue, setRevenue] = useState(842500);
   const [activeEmergency, setActiveEmergency] = useState(false);
 
-  // Central Database Fetch Function (Neon SQL)
+  // 1. Neon Cloud Database Fetch Function
   const syncHospitalState = useCallback(async () => {
     try {
-      const res = await fetch("/api/hospital-state", {
-        cache: "no-store",
-        headers: { "Cache-Control": "no-cache" },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.patients) setPatients(data.patients);
-        if (data.appointments) setAppointments(data.appointments);
-        if (data.labQueue) setLabQueue(data.labQueue);
-        if (data.inventory) setInventory(data.inventory);
-        if (data.beds) setBeds(data.beds);
-        if (data.bloodStock) setBloodStock(data.bloodStock);
-      }
-    } catch (err) {
-      console.warn("SQL Fetch polling error:", err);
-    }
-  }, []);
-
-  // Jahan bhi polling ya initial fetch ho raha hai:
-useEffect(() => {
-  const syncData = async () => {
-    try {
-      // Direct relative path use karein taaki CORS error na aaye
       const res = await fetch("/api/patients", {
         cache: "no-store",
-        headers: { "Pragma": "no-cache" }
+        headers: { "Pragma": "no-cache", "Cache-Control": "no-cache" },
       });
       if (!res.ok) return;
       const data = await res.json();
@@ -127,58 +104,77 @@ useEffect(() => {
         setPatients(data);
       }
     } catch (err) {
-      console.warn("Sync error:", err);
+      console.warn("Neon SQL Polling Sync Error:", err);
     }
-  };
+  }, []);
 
-  syncData();
-  const interval = setInterval(syncData, 4000); // 4 sec auto sync
-  return () => clearInterval(interval);
-}, []);
-  // Central Patient Addition
-  const addPatient = async (newPt: PatientData): Promise<boolean> => {
+  // 2. Real-time background sync loop (Har 4 seconds me live fetch)
+  useEffect(() => {
+    syncHospitalState();
+    const interval = setInterval(syncHospitalState, 4000);
+    return () => clearInterval(interval);
+  }, [syncHospitalState]);
+
+  // 3. Direct Neon Cloud SQL Patient Insert (Zero localStorage)
+  const addPatient = async (patientData: any): Promise<any> => {
     try {
       const res = await fetch("/api/patients", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(newPt),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(patientData),
       });
 
       if (res.ok) {
-        await syncHospitalState();
-        return true;
+        const savedPatient = await res.json();
+        setPatients((prev: any[]) => [savedPatient, ...prev.filter((p: any) => p.id !== savedPatient.id)]);
+        return savedPatient;
+      } else {
+        const errData = await res.json();
+        console.error("Neon DB Insert Error:", errData);
+        return null;
       }
     } catch (err) {
-      console.error("Failed to persist patient to DB:", err);
+      console.error("Network error persisting patient to Neon:", err);
+      return null;
     }
-    return false;
   };
 
-  const registerNewPatientWorkflow = (newPt: PatientData) => {
-    addPatient(newPt);
+  const registerNewPatientWorkflow = async (data: any) => {
+    return await addPatient(data);
   };
 
-  const triggerEmergencyTriage = async (traumaType: string, age: number, gender: string, notes: string) => {
-    const traumaId = `TRAUMA-${Math.floor(1000 + Math.random() * 9000)}`;
-    const patientIdentifier = `RED-CODE (${traumaType})`;
+  const triggerEmergencyTriage = async (traumaTypeOrData: any, age?: number, gender?: string, notes?: string) => {
+    let payload: any;
 
-    const emergencyPt: PatientData = {
-      id: traumaId,
-      name: `${patientIdentifier} [${gender.charAt(0)}/${age}Y]`,
-      abhaId: `91-RED-${Date.now().toString().slice(-6)}`,
-      age,
-      gender,
-      bp: "Unstable (STAT)",
-      pulse: 135,
-      temperature: "99.1",
-      symptoms: `ACUTE RED CODE: ${traumaType}. ${notes}`,
-      caseNotes: `STAT PROTOCOL ACTIVATED: Immediate resuscitation line established. Priority Level 1 Triage.`,
-      createdAt: new Date().toISOString(),
-    };
+    if (typeof traumaTypeOrData === "object" && traumaTypeOrData !== null) {
+      payload = {
+        ...traumaTypeOrData,
+        name: traumaTypeOrData.name || "CODE RED STAT RESUS",
+        status: "Critical Resus",
+        bedNumber: "TRAUMA-RESUS-01",
+      };
+    } else {
+      const traumaType = String(traumaTypeOrData || "Critical Trauma");
+      payload = {
+        name: `RED-CODE (${traumaType}) [${(gender || "M").charAt(0)}/${age || 30}Y]`,
+        abhaId: `91-RED-${Date.now().toString().slice(-6)}`,
+        age: age || 30,
+        gender: gender || "Male",
+        bp: "Unstable (STAT)",
+        pulse: 135,
+        temperature: "99.1",
+        symptoms: `ACUTE RED CODE: ${traumaType}. ${notes || ""}`,
+        caseNotes: `STAT PROTOCOL ACTIVATED: Immediate resuscitation line established. Priority Level 1 Triage.`,
+        status: "Critical Resus",
+        bedNumber: "TRAUMA-RESUS-01",
+      };
+    }
 
     setActiveEmergency(true);
     setRevenue((prev) => prev + 2500);
-    await addPatient(emergencyPt);
+    return await addPatient(payload);
   };
 
   const dismissEmergency = () => {
@@ -299,6 +295,7 @@ useEffect(() => {
       console.warn("Failed to sync bed sanitization to API:", e);
     }
   };
+
   const requestBloodCrossmatch = (patientName: string, bloodGroup: string, units: number) => {
     setBloodStock((prev) =>
       prev.map((b) =>
