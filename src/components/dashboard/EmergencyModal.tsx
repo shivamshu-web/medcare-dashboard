@@ -46,7 +46,7 @@ const EMERGENCY_PRESETS = [
 ];
 
 export default function EmergencyModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
-  const { setPatients, setBeds, refreshPatients } = useHospital() as any;
+  const { setPatients, setBeds, refreshPatients, addPatient } = useHospital() as any;
 
   const [selectedCase, setSelectedCase] = useState(EMERGENCY_PRESETS[0]);
   const [patientName, setPatientName] = useState("");
@@ -64,55 +64,75 @@ export default function EmergencyModal({ isOpen, onClose }: { isOpen: boolean; o
 
   const handleDispatch = async () => {
     const finalName = patientName.trim() || `ER Critical (${selectedCase.name.split("/")[0]})`;
-    const finalAge = typeof patientAge === "number" ? patientAge : 35;
+    const finalAge = typeof patientAge === "number" ? patientAge : 38;
     const targetBed = selectedBed;
 
+    // Neon Cloud Database ke schema se exact match hone wala payload
     const newPatient = {
-      id: `PT-ER-${Date.now()}`,
       name: finalName,
       age: finalAge,
       gender: patientGender,
-      contact: "+91 98765 43210",
-      bloodGroup: "O-",
-      abhaId: `ABHA-ER-${Math.floor(1000 + Math.random() * 9000)}`,
-      complaint: `[CODE RED ER] ${selectedCase.name}`,
-      diagnosis: selectedCase.name,
-      vitals: "BP 85/50, SpO2 88%, Pulse 130",
+      contact: "+91 99999 00000",
+      bloodGroup: "O+",
+      abhaId: `91-RED-${Math.floor(1000 + Math.random() * 9000)}-${Math.floor(1000 + Math.random() * 9000)}`,
+      symptoms: `[CODE RED ER] ${selectedCase.name}`,
+      caseNotes: `STAT PROTOCOL: ${selectedCase.statLab.join(", ")}`,
+      bp: "85/50",
+      pulse: 130,
+      temperature: "99.0",
       treatment: `STAT Dispatched: ${selectedCase.statLab.join(", ")}`,
-      bedNumber: targetBed, // EXACT MATCH with Wards
-      status: "Admitted",
-      createdAt: new Date().toISOString(),
+      bedNumber: targetBed,
+      status: "Critical Resus",
     };
 
-    // 1. Patient Table mein Add
-    if (setPatients) {
-      setPatients((prev: any[]) => [newPatient, ...(prev || [])]);
-    }
-
-    // 2. Wards Bed List ko turant OCCUPIED mark karein (EXACT MATCH on bedNumber)
-    if (setBeds) {
-      setBeds((prevBeds: any[]) =>
-        prevBeds.map((b: any) =>
-          b.bedNumber === targetBed || b.id === targetBed
-            ? {
-                ...b,
-                status: "Occupied",
-                patientName: finalName,
-                patient: finalName,
-                condition: "Critical (Code Red)",
-                diagnosis: selectedCase.name,
-                vitals: "BP 85/50, Pulse 130",
-              }
-            : b
-        )
-      );
-    }
-
-    // 3. LocalStorage mein bhi save taaki refresh par na ude
     try {
-      const existing = JSON.parse(localStorage.getItem("medcare_patients_db") || "[]");
-      localStorage.setItem("medcare_patients_db", JSON.stringify([newPatient, ...existing]));
-    } catch (e) {}
+      // 1. DIRECT NEON CLOUD SQL INSERT (POST TO /api/patients)
+      const res = await fetch("/api/patients", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(newPatient),
+      });
+
+      if (res.ok) {
+        const savedPt = await res.json();
+
+        // 2. React Context State ko update karein
+        if (setPatients) {
+          setPatients((prev: any[]) => [savedPt, ...(prev || [])]);
+        }
+
+        // 3. Bed ko Wards me Occupied mark karein
+        if (setBeds) {
+          setBeds((prevBeds: any[]) =>
+            prevBeds.map((b: any) =>
+              b.bedNumber === targetBed || b.id === targetBed
+                ? {
+                    ...b,
+                    status: "Occupied",
+                    patientName: finalName,
+                    patient: finalName,
+                    condition: "Critical (Code Red)",
+                    diagnosis: selectedCase.name,
+                    vitals: "BP 85/50, Pulse 130",
+                  }
+                : b
+            )
+          );
+        }
+
+        // 4. Background sync trigger karein
+        if (refreshPatients) {
+          refreshPatients();
+        }
+      } else {
+        const errData = await res.json();
+        console.error("Neon DB Save Error:", errData);
+      }
+    } catch (e) {
+      console.error("Failed to post ER patient to Neon DB:", e);
+    }
 
     setIsDispatched(true);
     setTimeout(() => {
@@ -143,7 +163,7 @@ export default function EmergencyModal({ isOpen, onClose }: { isOpen: boolean; o
           <div className="p-10 text-center space-y-3">
             <CheckCircle2 className="w-12 h-12 text-emerald-600 mx-auto animate-bounce" />
             <h3 className="text-lg font-black text-gray-900">Bed {selectedBed} Locked & Patient Admitted!</h3>
-            <p className="text-xs text-gray-500">Synced directly with Wards and Patient Cases.</p>
+            <p className="text-xs text-gray-500">Synced directly with Neon Cloud SQL Database.</p>
           </div>
         ) : (
           <div className="p-6 space-y-4">
