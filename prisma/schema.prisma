@@ -7,72 +7,88 @@ generator client {
   provider = "prisma-client-js"
 }
 
+// 1. Patient Cases / Code Red Intakes
 model Patient {
-  id         String   @id @default(uuid())
-  name       String
-  age        Int
-  gender     String
-  contact    String?
-  bloodGroup String?
-  abhaId     String   @unique
-  complaint  String?
-  diagnosis  String?
-  vitals     String?
-  treatment  String?
-  bedNumber  String?
-  status     String?
-  createdAt  DateTime @default(now())
+  id          String   @id @default(uuid())
+  name        String
+  age         Int
+  gender      String
+  contact     String?
+  bloodGroup  String?
+  abhaId      String   @unique
+  complaint   String?
+  diagnosis   String?
+  treatment   String?
+  vitals      String?  // JSON stringified: { bp, pulse, temperature, spO2 }
+  bedNumber   String?
+  status      String   @default("Admitted")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([abhaId])
+  @@index([status])
 }
 
+// 2. Doctor OPD & Triage Appointments
 model Appointment {
   id        String   @id @default(uuid())
   patient   String
   doctor    String
   time      String
-  type      String
-  status    String
+  type      String   // Routine, Emergency, Follow-up
+  status    String   @default("Scheduled") // Scheduled, Completed, Cancelled
   createdAt DateTime @default(now())
 }
 
+// 3. Clinical Laboratory Diagnostic Queue
 model LabItem {
   id        String   @id @default(uuid())
   token     String   @unique
   test      String
   patient   String
   doctor    String
-  status    String
-  tat       String
+  status    String   @default("In-Queue") // In-Queue, In-Process, Completed
+  tat       String   @default("45 mins")
   createdAt DateTime @default(now())
+
+  @@index([token])
 }
 
+// 4. Pharmacy Formulary & Medicine Stock
 model Medicine {
-  id         String   @id @default(uuid())
-  name       String
+  id          String   @id @default(uuid())
+  name        String
   genericName String
-  category   String
-  batch      String
-  stock      Int
-  unitPrice  Float
-  expiry     String
-  createdAt  DateTime @default(now())
+  category    String   // Tablet, Capsule, Syrup, Injection, IV Fluid
+  batch       String
+  stock       Int      @default(0)
+  unitPrice   Float    @default(0.0)
+  expiry      String
+  updatedAt   DateTime @updatedAt
 }
 
+// 5. Hospital Ward Beds Allocation & Lock
 model Bed {
   id          String   @id @default(uuid())
-  ward        String
+  ward        String   // ICU, Emergency, General, Burn Unit
   number      String   @unique
-  status      String
+  status      String   @default("Available") // Available, Occupied, Cleaning
   patientName String?
   abhaId      String?
   admitTime   String?
   updatedAt   DateTime @updatedAt
+
+  @@index([number])
 }
 
+// 6. Blood Bank Units & Critical Thresholds
 model BloodStock {
   id                String   @id @default(uuid())
-  group             String   @unique
-  unitsAvailable    Int
-  criticalThreshold Int
-  lastTested        String
+  group             String   @unique // A+, A-, B+, B-, AB+, AB-, O+, O-
+  unitsAvailable    Int      @default(0)
+  criticalThreshold Int      @default(5)
+  lastTested        String   @default("Today")
   updatedAt         DateTime @updatedAt
+
+  @@index([group])
 }

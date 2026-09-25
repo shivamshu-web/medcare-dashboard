@@ -2,82 +2,110 @@ import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
-const demoPatients = [
-  {
-    name: "Aarav Sharma",
-    abhaId: "91-4821-9034-1102",
-    age: 42,
-    gender: "Male",
-    contact: "+91 98765 43210",
-    bloodGroup: "B+",
-    complaint: "Fever, Cough, Fatigue",
-    diagnosis: "Suspected acute viral bronchitis. Mild throat congestion noted.",
-    treatment: "Hydration and oral antipyretics advised.",
-    vitals: JSON.stringify({ bp: "135/88", pulse: 78, temperature: "99.1" }),
-    bedNumber: "GEN-01",
-    status: "Admitted",
-  },
-  {
-    name: "Sunita Devi",
-    abhaId: "91-8842-1923-4411",
-    age: 38,
-    gender: "Female",
-    contact: "+91 91234 56780",
-    bloodGroup: "A+",
-    complaint: "High fever, chills, severe headache",
-    diagnosis: "Dengue NS1 positive, thrombocytopenia monitoring.",
-    treatment: "IV fluids 100ml/hr, platelet count monitoring.",
-    vitals: JSON.stringify({ bp: "110/70", pulse: 92, temperature: "102.4" }),
-    bedNumber: "GEN-02",
-    status: "Admitted",
-  },
-  {
-    name: "Rajeshwar Singh",
-    abhaId: "91-3312-9901-7782",
-    age: 61,
-    gender: "Male",
-    contact: "+91 99887 76655",
-    bloodGroup: "O+",
-    complaint: "Retrosternal chest tightness and shortness of breath",
-    diagnosis: "Unstable Angina, Non-STEMI ruled out, lipid profile high.",
-    treatment: "Dual antiplatelet therapy, Atorvastatin 40mg.",
-    vitals: JSON.stringify({ bp: "155/95", pulse: 84, temperature: "98.4" }),
-    bedNumber: "ICU-01",
-    status: "ICU Care",
-  },
-  {
-    name: "Vikram Malhotra",
-    abhaId: "91-7721-3344-9988",
-    age: 29,
-    gender: "Male",
-    contact: "+91 94561 23098",
-    bloodGroup: "AB+",
-    complaint: "Wheezing, nocturnal cough and breathlessness",
-    diagnosis: "Acute exacerbation of bronchial asthma.",
-    treatment: "Salbutamol nebulization Q6H, Budecort inhaler.",
-    vitals: JSON.stringify({ bp: "124/82", pulse: 88, temperature: "98.6" }),
-    bedNumber: "GEN-03",
-    status: "Admitted",
-  },
-];
-
 async function main() {
-  console.log("Seeding realistic ABDM clinical records to Neon Cloud...");
-  for (const patient of demoPatients) {
-    await prisma.patient.upsert({
-      where: {
-        abhaId: patient.abhaId,
-      },
-      update: patient,
-      create: patient,
+  console.log("🚀 Initializing Neon PostgreSQL Database setup...");
+
+  // 1. Clean old dummy patient records
+  console.log("🧹 Clearing old dummy patient records...");
+  await prisma.patient.deleteMany({});
+  console.log("✅ Patient table is now clean (0 rows) - Ready for real live intakes.");
+
+  // 2. Clear old appointments & lab items
+  await prisma.appointment.deleteMany({});
+  await prisma.labItem.deleteMany({});
+
+  // 3. Populate Ward & Critical Care Beds
+  console.log("🛏️ Configuring hospital bed capacity...");
+  const bedsData = [
+    { ward: "Cardio-Thoracic ICU", number: "ICU-BAY-01", status: "Available" },
+    { ward: "Red Zone Trauma Bay", number: "TRAUMA-RESUS-02", status: "Available" },
+    { ward: "Plastic & Burn Sterile Unit", number: "BURN-STERILE-03", status: "Available" },
+    { ward: "General Ward", number: "GEN-WARD-04", status: "Available" },
+    { ward: "General Ward", number: "GEN-WARD-05", status: "Available" },
+    { ward: "Emergency Observation", number: "EMERG-OBS-06", status: "Available" },
+  ];
+
+  for (const bed of bedsData) {
+    await prisma.bed.upsert({
+      where: { number: bed.number },
+      update: { status: "Available", patientName: null, abhaId: null, admitTime: null },
+      create: bed,
     });
   }
-  console.log("Database seeded successfully in Neon Cloud!");
+
+  // 4. Populate Blood Bank Stock
+  console.log("🩸 Initializing Blood Bank units...");
+  const bloodGroups = [
+    { group: "A+", unitsAvailable: 12, criticalThreshold: 5 },
+    { group: "A-", unitsAvailable: 4, criticalThreshold: 3 },
+    { group: "B+", unitsAvailable: 15, criticalThreshold: 5 },
+    { group: "B-", unitsAvailable: 3, criticalThreshold: 3 },
+    { group: "AB+", unitsAvailable: 6, criticalThreshold: 2 },
+    { group: "AB-", unitsAvailable: 2, criticalThreshold: 2 },
+    { group: "O+", unitsAvailable: 18, criticalThreshold: 6 },
+    { group: "O-", unitsAvailable: 5, criticalThreshold: 4 },
+  ];
+
+  for (const bg of bloodGroups) {
+    await prisma.bloodStock.upsert({
+      where: { group: bg.group },
+      update: { unitsAvailable: bg.unitsAvailable, criticalThreshold: bg.criticalThreshold },
+      create: bg,
+    });
+  }
+
+  // 5. Populate Essential Pharmacy Formulary
+  console.log("💊 Stocking essential hospital medicine inventory...");
+  await prisma.medicine.deleteMany({});
+  const medicines = [
+    {
+      name: "Dolo 650mg",
+      genericName: "Paracetamol",
+      category: "Tablet",
+      batch: "BT-2026-91",
+      stock: 150,
+      unitPrice: 30.0,
+      expiry: "12/2027",
+    },
+    {
+      name: "Augmentin 625 Duo",
+      genericName: "Amoxicillin + Clavulanic Acid",
+      category: "Tablet",
+      batch: "BT-2026-44",
+      stock: 65,
+      unitPrice: 195.0,
+      expiry: "09/2027",
+    },
+    {
+      name: "Ceftriaxone 1g",
+      genericName: "Ceftriaxone Sodium",
+      category: "Injection",
+      batch: "INJ-904",
+      stock: 40,
+      unitPrice: 85.0,
+      expiry: "05/2027",
+    },
+    {
+      name: "Normal Saline (0.9% NaCl 500ml)",
+      genericName: "Sodium Chloride IV",
+      category: "IV Fluid",
+      batch: "IV-882",
+      stock: 80,
+      unitPrice: 45.0,
+      expiry: "01/2028",
+    },
+  ];
+
+  for (const med of medicines) {
+    await prisma.medicine.create({ data: med });
+  }
+
+  console.log("✨ All tables configured and ready in Neon PostgreSQL Cloud!");
 }
 
 main()
   .catch((e) => {
-    console.error(e);
+    console.error("❌ Seed Error:", e);
     process.exit(1);
   })
   .finally(async () => {
