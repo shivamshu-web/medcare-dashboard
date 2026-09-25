@@ -16,6 +16,7 @@ import {
   User,
   Clock,
   ShieldCheck,
+  Loader2,
 } from "lucide-react";
 
 // Live SVG ECG Telemetry Waveform Component
@@ -78,20 +79,8 @@ function LiveECGTrace({
   );
 }
 
-// 8 Standard Bed Units Across the Hospital
-const BASE_WARDS = [
-  { id: "B-101", bedNumber: "ICU-BAY-01", ward: "Cardio-Thoracic ICU", dept: "ICU" },
-  { id: "B-102", bedNumber: "TRAUMA-RESUS-02", ward: "Red Zone Trauma Bay", dept: "Trauma" },
-  { id: "B-103", bedNumber: "BURN-STERILE-03", ward: "Plastic & Burn Isolation", dept: "Burn" },
-  { id: "B-104", bedNumber: "ER-CRIT-04", ward: "Triage Crash Unit", dept: "Emergency" },
-  { id: "B-105", bedNumber: "ICU-BAY-02", ward: "Intensive Care Unit 2", dept: "ICU" },
-  { id: "B-106", bedNumber: "GEN-WARD-11", ward: "General Medicine Male", dept: "General" },
-  { id: "B-107", bedNumber: "GEN-WARD-12", ward: "General Medicine Male", dept: "General" },
-  { id: "B-108", bedNumber: "GEN-WARD-21", ward: "Post-Op Recovery", dept: "General" },
-];
-
 export default function WardsView() {
-  const { patients, setPatients, setBeds, refreshPatients } = useHospital() as any;
+  const { beds, patients, setPatients, setBeds, refreshPatients } = useHospital() as any;
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedDept, setSelectedDept] = useState("All");
 
@@ -120,41 +109,61 @@ export default function WardsView() {
     return () => clearInterval(timer);
   }, []);
 
-  // 100% Dynamic Synchronization with Patients Database (Context + LocalStorage)
+  // Helper to categorize department
+  const getDept = (wardName: string = "", bedNum: string = "") => {
+    const str = `${wardName} ${bedNum}`.toLowerCase();
+    if (str.includes("icu")) return "ICU";
+    if (str.includes("trauma") || str.includes("resus")) return "Trauma";
+    if (str.includes("burn")) return "Burn";
+    if (str.includes("emerg") || str.includes("obs") || str.includes("triage")) return "Emergency";
+    return "General";
+  };
+
+  // 100% PURE DYNAMIC BINDING TO NEON CLOUD DATABASE (NO DUMMY FALLBACK ARRAY)
   const unifiedBeds = useMemo(() => {
-    let localPatients: any[] = [];
-    if (typeof window !== "undefined") {
-      try {
-        localPatients = JSON.parse(localStorage.getItem("medcare_patients_db") || "[]");
-      } catch (e) {}
+    if (!Array.isArray(beds) || beds.length === 0) {
+      return [];
     }
 
-    // Merge Context and LocalStorage patients uniquely by id
-    const uniqueMap = new Map();
-    [...(patients || []), ...localPatients].forEach((p: any) => {
-      if (p?.id) uniqueMap.set(p.id, p);
-    });
-    const allVerifiedPatients = Array.from(uniqueMap.values());
+    return beds.map((dbBed: any) => {
+      const bedNumber = dbBed.number || dbBed.bedNumber;
+      const wardName = dbBed.ward || "General Inpatient";
+      const dept = getDept(wardName, bedNumber);
 
-    return BASE_WARDS.map((base) => {
-      // Find patient allocated to this specific bedNumber
-      const assignedPatient = allVerifiedPatients.find((p: any) => {
+      // Match patient directly from live Neon DB patients
+      const assignedPatient = (patients || []).find((p: any) => {
         const bedVal = String(p.bedNumber || "").trim().toLowerCase();
         return (
-          (bedVal === base.bedNumber.toLowerCase() || bedVal === base.id.toLowerCase()) &&
+          (bedVal === String(bedNumber).toLowerCase() || bedVal === String(dbBed.id || "").toLowerCase()) &&
           p.status !== "Discharged" &&
           p.bedNumber !== "Discharged"
         );
       });
 
-      const isOccupied = !!assignedPatient;
+      const isOccupied = dbBed.status === "Occupied" || !!assignedPatient;
+      const patientName = assignedPatient?.name || dbBed.patientName;
 
-      const condition = assignedPatient?.complaint || "Routine Observation";
-      const diagnosis = assignedPatient?.diagnosis || "Inpatient Care";
+      let vitalsDisplay = "BP 120/80, HR 76, SpO2 98%";
+      if (assignedPatient?.vitals) {
+        if (typeof assignedPatient.vitals === "string" && assignedPatient.vitals.startsWith("{")) {
+          try {
+            const parsed = JSON.parse(assignedPatient.vitals);
+            vitalsDisplay = `BP ${parsed.bp || "120/80"}, HR ${parsed.pulse || 76}, SpO2 ${parsed.spO2 || "98%"}`;
+          } catch (e) {
+            vitalsDisplay = assignedPatient.vitals;
+          }
+        } else {
+          vitalsDisplay = assignedPatient.vitals;
+        }
+      }
+
+      const condition = assignedPatient?.complaint || assignedPatient?.symptoms || "Routine Inpatient Care";
+      const diagnosis = assignedPatient?.diagnosis || assignedPatient?.caseNotes || "Admitted to Ward";
 
       const isCritical =
         isOccupied &&
         ((condition || "").toLowerCase().includes("code red") ||
+          (condition || "").toLowerCase().includes("stat") ||
           (diagnosis || "").toLowerCase().includes("arrest") ||
           (diagnosis || "").toLowerCase().includes("burn") ||
           (diagnosis || "").toLowerCase().includes("stemi") ||
@@ -162,21 +171,54 @@ export default function WardsView() {
           (condition || "").toLowerCase().includes("critical"));
 
       return {
-        ...base,
+        id: dbBed.id,
+        bedNumber,
+        ward: wardName,
+        dept,
         status: isOccupied ? "Occupied" : "Available",
-        patientName: assignedPatient?.name,
+        patientName,
         patient: assignedPatient || null,
         condition,
         diagnosis,
         isCritical,
-        vitals: assignedPatient?.vitals || "BP 120/80, HR 76, SpO2 98%",
+        vitals: vitalsDisplay,
       };
     });
-  }, [patients]);
+  }, [beds, patients]);
 
-  // Discharge patient: releases bed assignment cleanly
+  // Discharge patient: releases bed assignment cleanly and updates Neon DB directly
   const handleDischarge = async (bedNumber: string, patientId?: string) => {
-    // 1. Update Context Patients
+    try {
+      // 1. Update Neon DB Patient Record
+      if (patientId) {
+        await fetch("/api/patients", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: patientId,
+            bedNumber: "Discharged",
+            status: "Discharged",
+          }),
+        });
+      }
+
+      // 2. Update Neon DB Bed Table
+      await fetch("/api/hospital-state", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "UPDATE_BED",
+          payload: {
+            id: bedNumber,
+            data: { status: "Available", patientName: null, abhaId: null },
+          },
+        }),
+      });
+    } catch (e) {
+      console.error("Discharge Neon DB sync error:", e);
+    }
+
+    // 3. React Context immediate state reflection
     if (setPatients) {
       setPatients((prev: any[]) =>
         (prev || []).map((p: any) => {
@@ -188,36 +230,18 @@ export default function WardsView() {
       );
     }
 
-    // 2. Update Context Beds
     if (setBeds) {
       setBeds((prevBeds: any[]) =>
         (prevBeds || []).map((b: any) =>
-          b.bedNumber === bedNumber || b.id === bedNumber
+          b.number === bedNumber || b.bedNumber === bedNumber || b.id === bedNumber
             ? {
                 ...b,
                 status: "Available",
-                patientName: undefined,
-                patient: undefined,
-                condition: undefined,
-                diagnosis: undefined,
+                patientName: null,
               }
             : b
         )
       );
-    }
-
-    // 3. Update LocalStorage directly
-    try {
-      const stored = JSON.parse(localStorage.getItem("medcare_patients_db") || "[]");
-      const updated = stored.map((p: any) => {
-        if ((patientId && p.id === patientId) || p.bedNumber === bedNumber) {
-          return { ...p, bedNumber: "Discharged", status: "Discharged" };
-        }
-        return p;
-      });
-      localStorage.setItem("medcare_patients_db", JSON.stringify(updated));
-    } catch (e) {
-      console.warn(e);
     }
 
     if (refreshPatients) refreshPatients();
@@ -252,11 +276,11 @@ export default function WardsView() {
                 ICU & Trauma Bed Telemetry Console
               </h1>
               <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-widest flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" /> Live DB Sync
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" /> Live Neon DB Sync
               </span>
             </div>
             <p className="text-xs text-emerald-200/70 mt-1">
-              Direct telemetry sync between Emergency Triage (Code Red), OT Resus, and Inpatient Admissions.
+              Synchronized ward matrix directly connected to PostgreSQL Bed table.
             </p>
           </div>
 
@@ -264,7 +288,7 @@ export default function WardsView() {
           <div className="flex items-center gap-3">
             <div className="px-4 py-2 rounded-2xl bg-[#092e24] border border-emerald-800/60">
               <span className="text-[10px] uppercase font-bold text-emerald-400 block">Total Beds</span>
-              <b className="text-lg font-black text-white">{BASE_WARDS.length}</b>
+              <b className="text-lg font-black text-white">{unifiedBeds.length}</b>
             </div>
             <div className="px-4 py-2 rounded-2xl bg-emerald-950/60 border border-emerald-500/40">
               <span className="text-[10px] uppercase font-bold text-emerald-300 block">Available</span>
@@ -314,60 +338,144 @@ export default function WardsView() {
         </div>
       </div>
 
-      {/* Clinical Beds Matrix */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-        {filteredBeds.map((b) => {
-          const isOccupied = b.status === "Occupied";
-          const patient = b.patient;
+      {/* Database Loading State */}
+      {unifiedBeds.length === 0 ? (
+        <div className="py-20 text-center bg-white rounded-3xl border border-gray-200 shadow-xs flex flex-col items-center justify-center space-y-3">
+          <Loader2 className="w-8 h-8 text-emerald-600 animate-spin" />
+          <h4 className="text-sm font-black text-gray-800">Connecting to Neon Cloud Bed Database...</h4>
+          <p className="text-xs text-gray-500 max-w-sm">
+            Fetching registered bed records directly from PostgreSQL console.
+          </p>
+        </div>
+      ) : (
+        /* Clinical Beds Matrix */
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+          {filteredBeds.map((b) => {
+            const isOccupied = b.status === "Occupied";
+            const patient = b.patient;
 
-          return (
-            <div
-              key={b.id}
-              className={`rounded-3xl border-2 transition-all duration-200 flex flex-col justify-between overflow-hidden shadow-xs ${
-                isOccupied
-                  ? b.isCritical
-                    ? "bg-[#091512] text-white border-rose-500/80 ring-2 ring-rose-500/20"
-                    : "bg-white text-gray-900 border-amber-300"
-                  : "bg-white border-emerald-200 hover:border-emerald-400 text-gray-800"
-              }`}
-            >
-              <div className="p-5 space-y-4">
-                {/* Bed Header Strip */}
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <div
-                      className={`w-10 h-10 rounded-2xl flex items-center justify-center font-black ${
-                        isOccupied
-                          ? b.isCritical
-                            ? "bg-rose-600 text-white shadow-lg shadow-rose-600/40 animate-pulse"
-                            : "bg-amber-500 text-white"
-                          : "bg-emerald-100 text-emerald-800"
-                      }`}
-                    >
-                      <BedDouble className="w-5 h-5" />
+            return (
+              <div
+                key={b.id}
+                className={`rounded-3xl border-2 transition-all duration-200 flex flex-col justify-between overflow-hidden shadow-xs ${
+                  isOccupied
+                    ? b.isCritical
+                      ? "bg-[#091512] text-white border-rose-500/80 ring-2 ring-rose-500/20"
+                      : "bg-white text-gray-900 border-amber-300"
+                    : "bg-white border-emerald-200 hover:border-emerald-400 text-gray-800"
+                }`}
+              >
+                <div className="p-5 space-y-4">
+                  {/* Bed Header Strip */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div
+                        className={`w-10 h-10 rounded-2xl flex items-center justify-center font-black ${
+                          isOccupied
+                            ? b.isCritical
+                              ? "bg-rose-600 text-white shadow-lg shadow-rose-600/40 animate-pulse"
+                              : "bg-amber-500 text-white"
+                            : "bg-emerald-100 text-emerald-800"
+                        }`}
+                      >
+                        <BedDouble className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h3
+                          className={`text-sm font-black tracking-tight ${
+                            isOccupied && b.isCritical ? "text-white" : "text-gray-900"
+                          }`}
+                        >
+                          {b.bedNumber}
+                        </h3>
+                        <p
+                          className={`text-[11px] font-semibold ${
+                            isOccupied && b.isCritical ? "text-gray-400" : "text-gray-500"
+                          }`}
+                        >
+                          {b.ward}
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <h3
-                        className={`text-sm font-black tracking-tight ${
-                          isOccupied && b.isCritical ? "text-white" : "text-gray-900"
+
+                    <div className="flex items-center gap-1.5">
+                      {isOccupied && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setActiveTelemetry({
+                              isOpen: true,
+                              patientName: b.patientName || "ICU Patient",
+                              bedNumber: b.bedNumber,
+                            })
+                          }
+                          className={`p-1.5 rounded-xl border transition cursor-pointer flex items-center gap-1 text-[10px] font-bold ${
+                            b.isCritical
+                              ? "bg-rose-950/80 border-rose-500 text-rose-300 hover:bg-rose-900"
+                              : "bg-emerald-950/80 border-emerald-500 text-emerald-300 hover:bg-emerald-900"
+                          }`}
+                          title="Open Bedside Audio Telemetry Monitor"
+                        >
+                          <Maximize2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+
+                      <span
+                        className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                          isOccupied
+                            ? b.isCritical
+                              ? "bg-rose-600 text-white border border-rose-400 animate-pulse"
+                              : "bg-amber-100 text-amber-900 border border-amber-300"
+                            : "bg-emerald-50 text-emerald-700 border border-emerald-200"
                         }`}
                       >
-                        {b.bedNumber}
-                      </h3>
-                      <p
-                        className={`text-[11px] font-semibold ${
-                          isOccupied && b.isCritical ? "text-gray-400" : "text-gray-500"
-                        }`}
-                      >
-                        {b.ward}
-                      </p>
+                        {isOccupied ? (b.isCritical ? "Code Red" : "Admitted") : "Sanitized"}
+                      </span>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-1.5">
-                    {isOccupied && (
-                      <button
-                        type="button"
+                  {/* Patient Occupancy & Waveform Area */}
+                  {isOccupied ? (
+                    <div className="space-y-3">
+                      {/* Patient Information Card */}
+                      <div
+                        className={`p-3.5 rounded-2xl border ${
+                          b.isCritical
+                            ? "bg-[#0d221c] border-emerald-900/60"
+                            : "bg-gray-50 border-gray-200"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <User className={`w-3.5 h-3.5 ${b.isCritical ? "text-rose-400" : "text-gray-700"}`} />
+                            <h4
+                              className={`text-xs font-black truncate max-w-[180px] ${
+                                b.isCritical ? "text-emerald-300" : "text-gray-900"
+                              }`}
+                            >
+                              {b.patientName || "Emergency Patient"}
+                            </h4>
+                          </div>
+                          <span className="text-[10px] font-mono text-gray-400">
+                            {patient?.age ? `${patient.age} Yrs` : "Adult"}
+                          </span>
+                        </div>
+
+                        <p
+                          className={`text-[11px] mt-1.5 font-bold truncate ${
+                            b.isCritical ? "text-rose-400" : "text-amber-700"
+                          }`}
+                        >
+                          Dx: {b.diagnosis || b.condition}
+                        </p>
+
+                        <div className="flex items-center justify-between text-[10px] text-gray-400 font-mono mt-1 pt-1 border-t border-gray-200/40">
+                          <span>{b.vitals}</span>
+                        </div>
+                      </div>
+
+                      {/* Continuous ECG Oscilloscope Waveform */}
+                      <div
                         onClick={() =>
                           setActiveTelemetry({
                             isOpen: true,
@@ -375,151 +483,78 @@ export default function WardsView() {
                             bedNumber: b.bedNumber,
                           })
                         }
-                        className={`p-1.5 rounded-xl border transition cursor-pointer flex items-center gap-1 text-[10px] font-bold ${
-                          b.isCritical
-                            ? "bg-rose-950/80 border-rose-500 text-rose-300 hover:bg-rose-900"
-                            : "bg-emerald-950/80 border-emerald-500 text-emerald-300 hover:bg-emerald-900"
-                        }`}
-                        title="Open Bedside Audio Telemetry Monitor"
+                        className="space-y-1 cursor-pointer group"
+                        title="Click to launch Bedside Audio Telemetry"
                       >
-                        <Maximize2 className="w-3.5 h-3.5" />
+                        <div className="flex items-center justify-between text-[10px] font-bold">
+                          <span
+                            className={`flex items-center gap-1 group-hover:underline ${
+                              b.isCritical ? "text-emerald-400" : "text-gray-600"
+                            }`}
+                          >
+                            <Activity className="w-3.5 h-3.5 text-emerald-500 animate-bounce" /> Live Continuous Waveform
+                          </span>
+                          <span className="font-mono text-emerald-400">
+                            HR: {telemetryPulse.hr} bpm | SpO2: {telemetryPulse.spo2}%
+                          </span>
+                        </div>
+                        <LiveECGTrace color="#10b981" isCritical={b.isCritical} />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="py-8 text-center bg-gray-50 rounded-2xl border border-dashed border-gray-200 flex flex-col items-center justify-center">
+                      <CheckCircle2 className="w-7 h-7 text-emerald-600 mb-1" />
+                      <p className="text-xs font-bold text-gray-800">Bed Clean & Ready</p>
+                      <span className="text-[10px] text-gray-400">
+                        Oxygen & Defib Calibrated • Auto-assign via Code Red / Intake
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Card Footer Actions */}
+                <div
+                  className={`p-4 border-t flex items-center justify-between ${
+                    isOccupied && b.isCritical
+                      ? "bg-[#06120e] border-emerald-950"
+                      : "bg-gray-50/70 border-gray-100"
+                  }`}
+                >
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                    Dept: {b.dept}
+                  </span>
+
+                  <div className="flex items-center gap-2">
+                    {isOccupied && (
+                      <button
+                        onClick={() =>
+                          setActiveTelemetry({
+                            isOpen: true,
+                            patientName: b.patientName || "ICU Patient",
+                            bedNumber: b.bedNumber,
+                          })
+                        }
+                        className="text-[11px] font-bold text-emerald-500 hover:text-emerald-400 flex items-center gap-1 transition cursor-pointer"
+                      >
+                        <Activity className="w-3 h-3" /> Telemetry
                       </button>
                     )}
 
-                    <span
-                      className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                        isOccupied
-                          ? b.isCritical
-                            ? "bg-rose-600 text-white border border-rose-400 animate-pulse"
-                            : "bg-amber-100 text-amber-900 border border-amber-300"
-                          : "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                      }`}
-                    >
-                      {isOccupied ? (b.isCritical ? "Code Red" : "Admitted") : "Sanitized"}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Patient Occupancy & Waveform Area */}
-                {isOccupied ? (
-                  <div className="space-y-3">
-                    {/* Patient Information Card */}
-                    <div
-                      className={`p-3.5 rounded-2xl border ${
-                        b.isCritical
-                          ? "bg-[#0d221c] border-emerald-900/60"
-                          : "bg-gray-50 border-gray-200"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <User className={`w-3.5 h-3.5 ${b.isCritical ? "text-rose-400" : "text-gray-700"}`} />
-                          <h4
-                            className={`text-xs font-black truncate max-w-[180px] ${
-                              b.isCritical ? "text-emerald-300" : "text-gray-900"
-                            }`}
-                          >
-                            {b.patientName || "Emergency Patient"}
-                          </h4>
-                        </div>
-                        <span className="text-[10px] font-mono text-gray-400">
-                          {patient?.age ? `${patient.age} Yrs` : "Adult"}
-                        </span>
-                      </div>
-
-                      <p
-                        className={`text-[11px] mt-1.5 font-bold truncate ${
-                          b.isCritical ? "text-rose-400" : "text-amber-700"
-                        }`}
+                    {isOccupied && (
+                      <button
+                        onClick={() => handleDischarge(b.bedNumber, patient?.id)}
+                        className="text-[11px] font-black text-rose-500 hover:text-rose-400 hover:underline cursor-pointer flex items-center gap-1 transition"
                       >
-                        Dx: {b.diagnosis || b.condition}
-                      </p>
-
-                      <div className="flex items-center justify-between text-[10px] text-gray-400 font-mono mt-1 pt-1 border-t border-gray-200/40">
-                        <span>{b.vitals}</span>
-                      </div>
-                    </div>
-
-                    {/* Continuous ECG Oscilloscope Waveform (Clickable to Launch Audio Monitor) */}
-                    <div
-                      onClick={() =>
-                        setActiveTelemetry({
-                          isOpen: true,
-                          patientName: b.patientName || "ICU Patient",
-                          bedNumber: b.bedNumber,
-                        })
-                      }
-                      className="space-y-1 cursor-pointer group"
-                      title="Click to launch Bedside Audio Telemetry"
-                    >
-                      <div className="flex items-center justify-between text-[10px] font-bold">
-                        <span
-                          className={`flex items-center gap-1 group-hover:underline ${
-                            b.isCritical ? "text-emerald-400" : "text-gray-600"
-                          }`}
-                        >
-                          <Activity className="w-3.5 h-3.5 text-emerald-500 animate-bounce" /> Live Continuous Waveform
-                        </span>
-                        <span className="font-mono text-emerald-400">
-                          HR: {telemetryPulse.hr} bpm | SpO2: {telemetryPulse.spo2}%
-                        </span>
-                      </div>
-                      <LiveECGTrace color="#10b981" isCritical={b.isCritical} />
-                    </div>
+                        <UserCheck className="w-3.5 h-3.5" /> Discharge →
+                      </button>
+                    )}
                   </div>
-                ) : (
-                  <div className="py-8 text-center bg-gray-50 rounded-2xl border border-dashed border-gray-200 flex flex-col items-center justify-center">
-                    <CheckCircle2 className="w-7 h-7 text-emerald-600 mb-1" />
-                    <p className="text-xs font-bold text-gray-800">Bed Clean & Ready</p>
-                    <span className="text-[10px] text-gray-400">
-                      Oxygen & Defib Calibrated • Auto-assign via Code Red / Intake
-                    </span>
-                  </div>
-                )}
-              </div>
-
-              {/* Card Footer Actions */}
-              <div
-                className={`p-4 border-t flex items-center justify-between ${
-                  isOccupied && b.isCritical
-                    ? "bg-[#06120e] border-emerald-950"
-                    : "bg-gray-50/70 border-gray-100"
-                }`}
-              >
-                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
-                  Dept: {b.dept}
-                </span>
-
-                <div className="flex items-center gap-2">
-                  {isOccupied && (
-                    <button
-                      onClick={() =>
-                        setActiveTelemetry({
-                          isOpen: true,
-                          patientName: b.patientName || "ICU Patient",
-                          bedNumber: b.bedNumber,
-                        })
-                      }
-                      className="text-[11px] font-bold text-emerald-500 hover:text-emerald-400 flex items-center gap-1 transition cursor-pointer"
-                    >
-                      <Activity className="w-3 h-3" /> Telemetry
-                    </button>
-                  )}
-
-                  {isOccupied && (
-                    <button
-                      onClick={() => handleDischarge(b.bedNumber, patient?.id)}
-                      className="text-[11px] font-black text-rose-500 hover:text-rose-400 hover:underline cursor-pointer flex items-center gap-1 transition"
-                    >
-                      <UserCheck className="w-3.5 h-3.5" /> Discharge →
-                    </button>
-                  )}
                 </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Bedside Live ECG & Audio Monitor Popup */}
       {activeTelemetry.isOpen && (
