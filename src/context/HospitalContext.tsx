@@ -70,6 +70,7 @@ interface HospitalContextType {
   dispensePrescription: (medId: string) => void;
   restockMedicine: (medId: string, qty?: number) => void;
   updateLabStatus: (token: string, newStatus: string) => void;
+  deletePatient: (id: string) => Promise<boolean>;
   admitPatientToBed: (bedId: string, patientName: string, abhaId: string) => void;
   dischargeBed: (bedId: string) => void;
   sanitizeBed: (bedId: string) => void;
@@ -140,6 +141,27 @@ export function HospitalProvider({ children }: { children: React.ReactNode }) {
       return null;
     }
   };
+  const deletePatient = async (id: string): Promise<boolean> => {
+  try {
+    const res = await fetch(`/api/patients?id=${id}`, {
+      method: "DELETE",
+    });
+
+    if (res.ok) {
+      // Screen aur local state se turant remove karein
+      setPatients((prev: any[]) => prev.filter((p: any) => p.id !== id));
+      console.log("✅ Patient deleted from Neon DB:", id);
+      return true;
+    } else {
+      const err = await res.json();
+      console.error("❌ Neon DB delete error:", err);
+      return false;
+    }
+  } catch (err) {
+    console.error("❌ Network error deleting patient:", err);
+    return false;
+  }
+};
 
   const registerNewPatientWorkflow = async (data: any) => {
     return await addPatient(data);
@@ -338,6 +360,7 @@ export function HospitalProvider({ children }: { children: React.ReactNode }) {
         dismissEmergency,
         refreshPatients: syncHospitalState,
         addPatient,
+        deletePatient,
         registerNewPatient: addPatient,
         registerNewPatientWorkflow,
         triggerEmergencyTriage,
