@@ -71,6 +71,7 @@ interface HospitalContextType {
   restockMedicine: (medId: string, qty?: number) => void;
   updateLabStatus: (token: string, newStatus: string) => void;
   deletePatient: (id: string) => Promise<boolean>;
+  addMedicine: (medData: any) => Promise<any>;
   admitPatientToBed: (bedId: string, patientName: string, abhaId: string) => void;
   dischargeBed: (bedId: string) => void;
   sanitizeBed: (bedId: string) => void;
@@ -240,6 +241,30 @@ export function HospitalProvider({ children }: { children: React.ReactNode }) {
   const dismissEmergency = () => {
     setActiveEmergency(false);
   };
+  // Direct Medicine Add to Neon Database
+  const addMedicine = async (medData: any) => {
+    try {
+      const res = await fetch("/api/hospital-state", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "ADD_MEDICINE",
+          payload: medData,
+        }),
+      });
+
+      if (res.ok) {
+        const createdMed = await res.json();
+        // Screen par turant reflect ho:
+        setInventory((prev) => [createdMed, ...prev]);
+        syncHospitalState();
+        return createdMed;
+      }
+    } catch (e) {
+      console.error("Error adding medicine to Neon DB:", e);
+    }
+    return null;
+  };
 
   const dispensePrescription = async (medId: string) => {
     const target = inventory.find((m) => m.id === medId);
@@ -399,6 +424,7 @@ export function HospitalProvider({ children }: { children: React.ReactNode }) {
         refreshPatients: syncHospitalState,
         addPatient,
         deletePatient,
+        addMedicine,
         registerNewPatient: addPatient,
         registerNewPatientWorkflow,
         triggerEmergencyTriage,
