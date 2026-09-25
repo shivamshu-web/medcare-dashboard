@@ -26,7 +26,7 @@ export interface MedicineItem {
   id: string;
   name: string;
   genericName: string;
-  category: "Tablet" | "Capsule" | "Syrup" | "Injection" | "IV Fluid" | "Sachet";
+  category: "Tablet" | "Capsule" | "Syrup" | "Injection" | "IV Fluid" | "Sachet" | string;
   batch: string;
   stock: number;
   unitPrice: number;
@@ -45,7 +45,7 @@ export interface BedItem {
 
 export interface BloodUnitItem {
   id?: string;
-  group: "A+" | "A-" | "B+" | "B-" | "AB+" | "AB-" | "O+" | "O-";
+  group: "A+" | "A-" | "B+" | "B-" | "AB+" | "AB-" | "O+" | "O-" | string;
   unitsAvailable: number;
   criticalThreshold: number;
   lastTested: string;
@@ -92,34 +92,49 @@ export function HospitalProvider({ children }: { children: React.ReactNode }) {
   const [revenue, setRevenue] = useState(842500);
   const [activeEmergency, setActiveEmergency] = useState(false);
 
-  // 1. Neon Cloud Database Fetch Function
+  // 1. Neon Cloud Database Fetch Function (FIXED: Calls both endpoints properly)
   const syncHospitalState = useCallback(async () => {
     try {
-      const res = await fetch("/api/patients", {
+      // 1. Fetch Patients from /api/patients
+      const pRes = await fetch("/api/patients", {
         cache: "no-store",
         headers: { "Pragma": "no-cache", "Cache-Control": "no-cache" },
       });
-      if (!res.ok) return;
-      const data = await res.json();
-      if (Array.isArray(data.patients)) setPatients(data.patients);
-      if (Array.isArray(data.beds)) setBeds(data.beds);
-      if (Array.isArray(data.inventory)) setInventory(data.inventory);
-      if (Array.isArray(data.bloodStock)) setBloodStock(data.bloodStock);
-      if (Array.isArray(data.appointments)) setAppointments(data.appointments);
-      if (Array.isArray(data.labQueue)) setLabQueue(data.labQueue);
+      if (pRes.ok) {
+        const pData = await pRes.json();
+        if (Array.isArray(pData)) {
+          setPatients(pData);
+        } else if (pData && Array.isArray(pData.patients)) {
+          setPatients(pData.patients);
+        }
+      }
+
+      // 2. Fetch Beds, Inventory, Blood, Appointments, Lab from /api/hospital-state
+      const stateRes = await fetch("/api/hospital-state", {
+        cache: "no-store",
+        headers: { "Pragma": "no-cache", "Cache-Control": "no-cache" },
+      });
+      if (stateRes.ok) {
+        const sData = await stateRes.json();
+        if (Array.isArray(sData.beds)) setBeds(sData.beds);
+        if (Array.isArray(sData.inventory)) setInventory(sData.inventory);
+        if (Array.isArray(sData.bloodStock)) setBloodStock(sData.bloodStock);
+        if (Array.isArray(sData.appointments)) setAppointments(sData.appointments);
+        if (Array.isArray(sData.labQueue)) setLabQueue(sData.labQueue);
+      }
     } catch (err) {
       console.warn("Neon SQL Polling Sync Error:", err);
     }
   }, []);
 
-  // 2. Real-time background sync loop (Har 4 seconds me live fetch)
+  // 2. Real-time background sync loop (Har 3 seconds me live fetch)
   useEffect(() => {
     syncHospitalState();
-    const interval = setInterval(syncHospitalState, 4000);
+    const interval = setInterval(syncHospitalState, 3000);
     return () => clearInterval(interval);
   }, [syncHospitalState]);
 
-  // 3. Direct Neon Cloud SQL Patient Insert (Zero localStorage)
+  // 3. Direct Neon Cloud SQL Patient Insert
   const addPatient = async (patientData: any): Promise<any> => {
     try {
       const res = await fetch("/api/patients", {
@@ -133,6 +148,8 @@ export function HospitalProvider({ children }: { children: React.ReactNode }) {
       if (res.ok) {
         const savedPatient = await res.json();
         setPatients((prev: any[]) => [savedPatient, ...prev.filter((p: any) => p.id !== savedPatient.id)]);
+        // Turant background sync trigger
+        syncHospitalState();
         return savedPatient;
       } else {
         const errData = await res.json();
@@ -144,33 +161,35 @@ export function HospitalProvider({ children }: { children: React.ReactNode }) {
       return null;
     }
   };
-  const deletePatient = async (id: string): Promise<boolean> => {
-  try {
-    const res = await fetch(`/api/patients?id=${id}`, {
-      method: "DELETE",
-    });
 
-    if (res.ok) {
-      // Screen aur local state se turant remove karein
-      setPatients((prev: any[]) => prev.filter((p: any) => p.id !== id));
-      console.log("✅ Patient deleted from Neon DB:", id);
-      return true;
-    } else {
-      const err = await res.json();
-      console.error("❌ Neon DB delete error:", err);
+  const deletePatient = async (id: string): Promise<boolean> => {
+    try {
+      const res = await fetch(`/api/patients?id=${id}`, {
+        method: "DELETE",
+      });
+
+      if (res.ok) {
+        // Screen aur local state se turant remove karein
+        setPatients((prev: any[]) => prev.filter((p: any) => p.id !== id));
+        syncHospitalState();
+        console.log("✅ Patient deleted from Neon DB:", id);
+        return true;
+      } else {
+        const err = await res.json();
+        console.error("❌ Neon DB delete error:", err);
+        return false;
+      }
+    } catch (err) {
+      console.error("❌ Network error deleting patient:", err);
       return false;
     }
-  } catch (err) {
-    console.error("❌ Network error deleting patient:", err);
-    return false;
-  }
-};
+  };
 
   const registerNewPatientWorkflow = async (data: any) => {
     return await addPatient(data);
   };
+
   const triggerEmergencyTriage = async (traumaTypeOrData: any, age?: number, gender?: string, notes?: string) => {
-    // Unique Random ABHA ID generate karna taaki Neon database reject na kare
     const randomSuffix = Math.floor(100000 + Math.random() * 900000);
     const generatedAbha = `91-RED-${randomSuffix}`;
 
@@ -214,10 +233,10 @@ export function HospitalProvider({ children }: { children: React.ReactNode }) {
     setActiveEmergency(true);
     setRevenue((prev) => prev + 2500);
 
-    // Seedha Neon Cloud SQL database me bhejte hain
     const saved = await addPatient(payload);
     return saved;
   };
+
   const dismissEmergency = () => {
     setActiveEmergency(false);
   };
@@ -276,7 +295,7 @@ export function HospitalProvider({ children }: { children: React.ReactNode }) {
     };
 
     setBeds((prev) =>
-      prev.map((b) => (b.id === bedId ? { ...b, ...dataUpdate } : b))
+      prev.map((b) => (b.id === bedId || b.number === bedId ? { ...b, ...dataUpdate } : b))
     );
     setRevenue((prev) => prev + 1500);
 
@@ -300,7 +319,7 @@ export function HospitalProvider({ children }: { children: React.ReactNode }) {
     };
 
     setBeds((prev) =>
-      prev.map((b) => (b.id === bedId ? { ...b, ...dataUpdate } : b))
+      prev.map((b) => (b.id === bedId || b.number === bedId ? { ...b, ...dataUpdate } : b))
     );
 
     try {
@@ -323,7 +342,7 @@ export function HospitalProvider({ children }: { children: React.ReactNode }) {
     };
 
     setBeds((prev) =>
-      prev.map((b) => (b.id === bedId ? { ...b, ...dataUpdate } : b))
+      prev.map((b) => (b.id === bedId || b.number === bedId ? { ...b, ...dataUpdate } : b))
     );
 
     try {
@@ -337,15 +356,31 @@ export function HospitalProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const requestBloodCrossmatch = (patientName: string, bloodGroup: string, units: number) => {
+  const requestBloodCrossmatch = async (patientName: string, bloodGroup: string, units: number) => {
+    let currentUnits = 0;
     setBloodStock((prev) =>
-      prev.map((b) =>
-        b.group === bloodGroup
-          ? { ...b, unitsAvailable: Math.max(0, b.unitsAvailable - units) }
-          : b
-      )
+      prev.map((b) => {
+        if (b.group === bloodGroup) {
+          currentUnits = Math.max(0, b.unitsAvailable - units);
+          return { ...b, unitsAvailable: currentUnits };
+        }
+        return b;
+      })
     );
     setRevenue((prev) => prev + units * 1200);
+
+    try {
+      await fetch("/api/hospital-state", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "UPDATE_BLOOD",
+          payload: { group: bloodGroup, unitsAvailable: currentUnits },
+        }),
+      });
+    } catch (e) {
+      console.warn("Failed to sync blood units to API:", e);
+    }
   };
 
   return (
