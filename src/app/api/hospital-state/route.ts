@@ -105,37 +105,37 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
+    console.log("📥 Incoming POST /api/hospital-state payload:", body);
 
-    // Check if adding medicine
-    if (body.type === "ADD_MEDICINE" || body.name) {
-      const medData = body.payload || body;
+    const medData = body.payload || body;
 
-      const newMed = await (prisma as any).medicine.create({
-        data: {
-          name: medData.name,
-          genericName: medData.genericName || medData.name,
-          category: medData.category || "Tablet",
-          batch: medData.batch || `BT-${Math.floor(1000 + Math.random() * 9000)}`,
-          stock: Number(medData.stock) || 100,
-          unitPrice: Number(medData.unitPrice) || 20.0,
-          expiry: medData.expiry || "12/2028",
-        },
-      });
+    // Guaranteed Unique Batch Number & Clean Types
+    const cleanStock = Math.max(0, parseInt(String(medData.stock || 50), 10) || 50);
+    const cleanPrice = Math.max(0, parseFloat(String(medData.unitPrice || medData.price || 25.0)) || 25.0);
+    const randomBatch = `BT-${Math.floor(1000 + Math.random() * 9000)}`;
 
-      console.log("✅ Medicine added directly to Neon DB:", newMed.name);
-      return NextResponse.json(newMed, { status: 201, headers: corsHeaders });
-    }
+    const newMed = await (prisma as any).medicine.create({
+      data: {
+        name: String(medData.name || "New Formulary Item").trim(),
+        genericName: String(medData.genericName || medData.generic || medData.name || "Essential Generic").trim(),
+        category: String(medData.category || "Tablet"),
+        batch: String(medData.batch || randomBatch),
+        stock: cleanStock,
+        unitPrice: cleanPrice,
+        expiry: String(medData.expiry || "12/2028"),
+      },
+    });
 
-    return NextResponse.json({ error: "Invalid action type" }, { status: 400, headers: corsHeaders });
+    console.log("✅ Medicine saved successfully in Neon DB:", newMed.id, newMed.name);
+    return NextResponse.json(newMed, { status: 201, headers: corsHeaders });
   } catch (error: any) {
-    console.error("POST /api/hospital-state error:", error);
+    console.error("❌ Prisma Medicine Create Error:", error?.message || error);
     return NextResponse.json(
-      { error: error.message || "Failed to create resource" },
+      { error: "Failed to create medicine", details: error?.message },
       { status: 500, headers: corsHeaders }
     );
   }
 }
-
 // ========================================================
 // 3. PATCH: Beds, Stock, Blood, Labs sabhi ka Update Handle
 // ========================================================

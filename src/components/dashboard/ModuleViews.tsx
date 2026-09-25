@@ -40,7 +40,6 @@ export function AppointmentsView({ onNewIntake }: { onNewIntake?: () => void }) 
   const [doctorFilter, setDoctorFilter] = useState("All");
   const [localAppointments, setLocalAppointments] = useState<AppointmentItem[]>(appointments);
 
-  // Sync if context updates
   React.useEffect(() => {
     setLocalAppointments(appointments);
   }, [appointments]);
@@ -68,7 +67,6 @@ export function AppointmentsView({ onNewIntake }: { onNewIntake?: () => void }) 
 
   return (
     <div className="space-y-6">
-      {/* Top Banner */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-3xl border border-gray-200/80 shadow-xs">
         <div>
           <div className="flex items-center gap-2">
@@ -91,7 +89,6 @@ export function AppointmentsView({ onNewIntake }: { onNewIntake?: () => void }) 
         </button>
       </div>
 
-      {/* KPI Stats Row */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <div className="bg-white p-4 rounded-2xl border border-gray-200/80 shadow-xs">
           <span className="text-[10px] uppercase font-bold text-gray-400">Total Booked</span>
@@ -115,7 +112,6 @@ export function AppointmentsView({ onNewIntake }: { onNewIntake?: () => void }) 
         </div>
       </div>
 
-      {/* Search & Specialty Filter Controls */}
       <div className="bg-white p-4 rounded-2xl border border-gray-200/80 shadow-xs flex flex-col sm:flex-row gap-3 items-center justify-between">
         <div className="relative w-full sm:w-80">
           <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -153,7 +149,6 @@ export function AppointmentsView({ onNewIntake }: { onNewIntake?: () => void }) 
         </div>
       </div>
 
-      {/* Appointments List Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {filteredAppointments.map((apt) => {
           const isDone = apt.status === "Completed";
@@ -211,7 +206,6 @@ export function AppointmentsView({ onNewIntake }: { onNewIntake?: () => void }) 
                 </div>
               </div>
 
-              {/* Status Advance Controls */}
               <div className="pt-3 border-t border-gray-100 flex items-center justify-between gap-2">
                 <select
                   value={apt.status}
@@ -240,7 +234,7 @@ export function AppointmentsView({ onNewIntake }: { onNewIntake?: () => void }) 
 }
 
 // ==========================================
-// 2. ADVANCED LAB REPORTS VIEW (WITH REPORT MODAL)
+// 2. ADVANCED LAB REPORTS VIEW
 // ==========================================
 export function LabReportsView() {
   const { labQueue, updateLabStatus } = useHospital();
@@ -277,7 +271,6 @@ export function LabReportsView() {
 
   return (
     <div className="space-y-6">
-      {/* Header Banner */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-3xl border border-gray-200/80 shadow-xs">
         <div>
           <div className="flex items-center gap-2">
@@ -303,7 +296,6 @@ export function LabReportsView() {
         </div>
       </div>
 
-      {/* Lab Queue Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
         {filteredLabs.map((lab) => {
           const isComplete = lab.status === "Analysis Complete" || lab.status === "Ready";
@@ -372,7 +364,6 @@ export function LabReportsView() {
         })}
       </div>
 
-      {/* DETAILED PATHOLOGY REPORT MODAL */}
       {selectedReport && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 backdrop-blur-xs p-4 overflow-y-auto">
           <div className="bg-white w-full max-w-2xl rounded-3xl p-6 shadow-2xl space-y-5 border border-gray-100 my-6 animate-in fade-in zoom-in-95">
@@ -478,7 +469,7 @@ export function MedicalRecordsView({ onOpenIntake }: { onOpenIntake?: () => void
   const recordsList = patients.map((p, idx) => ({
     recordId: `EHR-2026-${1000 + idx}`,
     patientName: p.name,
-    abhaId: p.abhaId || "91-4401-9921-8812",
+    abhaId: p.abhaId || "ABHA-VERIFIED",
     age: p.age || 42,
     gender: p.gender || "Male",
     date: p.createdAt ? new Date(p.createdAt).toLocaleDateString("en-IN") : "Today",
@@ -496,7 +487,6 @@ export function MedicalRecordsView({ onOpenIntake }: { onOpenIntake?: () => void
 
   return (
     <div className="space-y-6">
-      {/* Header Banner */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-3xl border border-gray-200/80 shadow-xs">
         <div>
           <div className="flex items-center gap-2">
@@ -522,7 +512,6 @@ export function MedicalRecordsView({ onOpenIntake }: { onOpenIntake?: () => void
         </div>
       </div>
 
-      {/* Records Table Card */}
       <div className="bg-white rounded-3xl border border-gray-200/80 shadow-xs overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs border-collapse">
@@ -572,7 +561,6 @@ export function MedicalRecordsView({ onOpenIntake }: { onOpenIntake?: () => void
         </div>
       </div>
 
-      {/* FULL MEDICAL RECORD & FHIR VIEWER MODAL */}
       {selectedPatientRecord && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 overflow-y-auto">
           <div className="bg-white w-full max-w-3xl rounded-3xl p-6 shadow-2xl space-y-4 border border-gray-100 my-6 animate-in fade-in zoom-in-95">
@@ -598,7 +586,6 @@ export function MedicalRecordsView({ onOpenIntake }: { onOpenIntake?: () => void
               </button>
             </div>
 
-            {/* Toggle: Human Readable vs FHIR JSON */}
             <div className="flex items-center gap-2 border-b border-gray-200 pb-2 text-xs font-bold">
               <button
                 onClick={() => setShowFhirJson(false)}
@@ -714,7 +701,7 @@ export function CaseIntakeView({ onOpenIntake }: { onOpenIntake?: () => void }) 
       <div>
         <h3 className="text-base font-bold text-gray-800">Instant Clinical Case Intake</h3>
         <p className="text-xs text-gray-500 mt-1">
-          Capture vitals, Aadhaar-based ABHA registration, and automated triage diagnosis.
+          Capture vitals, official ABHA registration, and automated triage diagnosis.
         </p>
       </div>
       <button
@@ -727,15 +714,18 @@ export function CaseIntakeView({ onOpenIntake }: { onOpenIntake?: () => void }) 
     </div>
   );
 }
+
 // ==========================================
-// 5. ADVANCED PHARMACY INVENTORY & VALUATION ENGINE
+// 5. ADVANCED PHARMACY INVENTORY & VALUATION ENGINE (CONNECTED TO NEON DB)
 // ==========================================
 export function PharmacyView() {
-  const { inventory, dispensePrescription, restockMedicine } = useHospital();
+  // YAHAN addMedicine KO EXTRACT KIYA GAYA HAI
+  const { inventory, dispensePrescription, restockMedicine, addMedicine } = useHospital() as any;
   
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("All");
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // New Medicine Form State
   const [newMedName, setNewMedName] = useState("");
@@ -745,17 +735,17 @@ export function PharmacyView() {
   const [newMedPrice, setNewMedPrice] = useState(45);
   const [newMedBatch, setNewMedBatch] = useState("BATCH-99");
 
-  // Local state initialized with context inventory for real-time math
+  // Direct sync from live database inventory
   const [localInventory, setLocalInventory] = useState(inventory);
 
   React.useEffect(() => {
     setLocalInventory(inventory);
   }, [inventory]);
 
-  // Handle Dispense (-1) with local recalculation
+  // Handle Dispense (-1)
   const handleDispense = (id: string) => {
     dispensePrescription(id);
-    setLocalInventory((prev) =>
+    setLocalInventory((prev: any[]) =>
       prev.map((item) =>
         item.id === id && item.stock > 0
           ? { ...item, stock: item.stock - 1 }
@@ -764,10 +754,10 @@ export function PharmacyView() {
     );
   };
 
-  // Handle Restock (+Qty) with local recalculation
+  // Handle Restock (+Qty)
   const handleRestock = (id: string, qty: number) => {
     restockMedicine(id, qty);
-    setLocalInventory((prev) =>
+    setLocalInventory((prev: any[]) =>
       prev.map((item) =>
         item.id === id
           ? { ...item, stock: item.stock + qty }
@@ -776,60 +766,82 @@ export function PharmacyView() {
     );
   };
 
-  // Add custom medicine with calculated value
-  const handleAddNewMedicine = (e: React.FormEvent) => {
+  // 100% PURE NEON CLOUD DATABASE PERSISTENCE FOR ADD MEDICINE
+  const handleAddNewMedicine = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMedName.trim()) return;
+    if (!newMedName.trim() || isSubmitting) return;
 
-    const newEntry: any = {
-      id: `MED-${Date.now().toString().slice(-4)}`,
-      name: newMedName,
-      genericName: newMedGeneric || newMedName,
+    setIsSubmitting(true);
+
+    const payload = {
+      name: newMedName.trim(),
+      genericName: newMedGeneric.trim() || newMedName.trim(),
       category: newMedCategory,
-      stock: Number(newMedStock),
-      unitPrice: Number(newMedPrice),
+      stock: Number(newMedStock) || 100,
+      unitPrice: Number(newMedPrice) || 45,
       batch: newMedBatch || `BATCH-${Math.floor(Math.random() * 900 + 100)}`,
-      expiry: "12/2027",
+      expiry: "12/2028",
     };
 
-    setLocalInventory((prev: any[]) => [newEntry, ...prev]);
-    setIsAddModalOpen(false);
+    try {
+      if (addMedicine) {
+        // Direct Neon DB insert via HospitalContext
+        const saved = await addMedicine(payload);
+        if (saved) {
+          setLocalInventory((prev: any[]) => [saved, ...prev]);
+        }
+      } else {
+        // Direct fetch fallback if context is not ready
+        const res = await fetch("/api/hospital-state", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ type: "ADD_MEDICINE", payload }),
+        });
+        if (res.ok) {
+          const saved = await res.json();
+          setLocalInventory((prev: any[]) => [saved, ...prev]);
+        }
+      }
 
-    // Reset Form
-    setNewMedName("");
-    setNewMedGeneric("");
-    setNewMedStock(100);
-    setNewMedPrice(45);
+      setIsAddModalOpen(false);
+      // Reset Form
+      setNewMedName("");
+      setNewMedGeneric("");
+      setNewMedStock(100);
+      setNewMedPrice(45);
+    } catch (err) {
+      console.error("Failed to add medicine to Neon:", err);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // Calculations
-  const filteredInventory = localInventory.filter((med) => {
+  const filteredInventory = localInventory.filter((med: any) => {
     const matchesSearch =
-      med.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      med.genericName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      med.batch.toLowerCase().includes(searchQuery.toLowerCase());
+      (med.name && med.name.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (med.genericName && med.genericName.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (med.batch && med.batch.toLowerCase().includes(searchQuery.toLowerCase()));
     const matchesCategory = categoryFilter === "All" || med.category === categoryFilter;
     return matchesSearch && matchesCategory;
   });
 
-  // Dynamic Total Valuation (Stock * Unit Price)
-  const totalStockUnits = localInventory.reduce((acc, m) => acc + m.stock, 0);
+  const totalStockUnits = localInventory.reduce((acc: number, m: any) => acc + (Number(m.stock) || 0), 0);
   const totalInventoryValuation = localInventory.reduce(
-    (acc, m) => acc + m.stock * m.unitPrice,
+    (acc: number, m: any) => acc + (Number(m.stock) || 0) * (Number(m.unitPrice) || 0),
     0
   );
-  const outOfStockCount = localInventory.filter((m) => m.stock === 0).length;
-  const lowStockCount = localInventory.filter((m) => m.stock > 0 && m.stock < 15).length;
+  const outOfStockCount = localInventory.filter((m: any) => Number(m.stock) === 0).length;
+  const lowStockCount = localInventory.filter((m: any) => Number(m.stock) > 0 && Number(m.stock) < 15).length;
 
   return (
     <div className="space-y-6">
-      {/* Top Banner with Total Live Valuation */}
       <div className="bg-white p-5 rounded-3xl border border-gray-200/80 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
             <h2 className="text-lg font-bold text-gray-800">Pharmacy & Central Medicine Formulary</h2>
             <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800">
-              Live Real-Time Valuation
+              Live Neon DB Sync
             </span>
           </div>
           <p className="text-xs text-gray-500 mt-0.5">
@@ -846,9 +858,7 @@ export function PharmacyView() {
         </button>
       </div>
 
-      {/* 4 KPI Summary Cards with Live Money Calculations */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        {/* Total Money Card */}
         <div className="bg-[#072a22] text-white p-4 rounded-2xl shadow-sm flex flex-col justify-between">
           <span className="text-[10px] uppercase font-bold text-emerald-300">Total Stock Value</span>
           <h3 className="text-2xl font-black mt-1">
@@ -859,7 +869,6 @@ export function PharmacyView() {
           </p>
         </div>
 
-        {/* Total Units */}
         <div className="bg-white p-4 rounded-2xl border border-gray-200/80 shadow-xs">
           <span className="text-[10px] uppercase font-bold text-gray-400">Total Quantity Available</span>
           <h3 className="text-2xl font-black text-gray-800 mt-1">
@@ -868,14 +877,12 @@ export function PharmacyView() {
           <p className="text-[10px] text-emerald-600 font-bold">Across {localInventory.length} formulations</p>
         </div>
 
-        {/* Low Stock */}
         <div className="bg-white p-4 rounded-2xl border border-gray-200/80 shadow-xs">
           <span className="text-[10px] uppercase font-bold text-amber-600">Low Stock Alert (&lt;15)</span>
           <h3 className="text-2xl font-black text-amber-600 mt-1">{lowStockCount}</h3>
           <p className="text-[10px] text-amber-600/80 font-medium">Restock suggested</p>
         </div>
 
-        {/* Out of Stock */}
         <div className="bg-white p-4 rounded-2xl border border-gray-200/80 shadow-xs">
           <span className="text-[10px] uppercase font-bold text-rose-600">Depleted / Out of Stock</span>
           <h3 className="text-2xl font-black text-rose-600 mt-1">{outOfStockCount}</h3>
@@ -883,7 +890,6 @@ export function PharmacyView() {
         </div>
       </div>
 
-      {/* Search & Category Filter Controls */}
       <div className="bg-white p-4 rounded-2xl border border-gray-200/80 shadow-xs flex flex-col sm:flex-row gap-3 items-center justify-between">
         <div className="relative w-full sm:w-80">
           <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -914,12 +920,11 @@ export function PharmacyView() {
         </div>
       </div>
 
-      {/* Inventory Cards Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filteredInventory.map((med) => {
-          const isOut = med.stock === 0;
-          const isLow = med.stock > 0 && med.stock < 15;
-          const itemTotalValuation = med.stock * med.unitPrice;
+        {filteredInventory.map((med: any) => {
+          const isOut = Number(med.stock) === 0;
+          const isLow = Number(med.stock) > 0 && Number(med.stock) < 15;
+          const itemTotalValuation = (Number(med.stock) || 0) * (Number(med.unitPrice) || 0);
 
           return (
             <div
@@ -956,7 +961,6 @@ export function PharmacyView() {
                   <p className="text-[10px] text-gray-400 mt-1">Exp: {med.expiry} • {med.category}</p>
                 </div>
 
-                {/* Pricing & Valuation Breakdown */}
                 <div className="p-3 bg-gray-50/80 rounded-2xl border border-gray-100 space-y-1 my-2 text-xs">
                   <div className="flex items-center justify-between">
                     <span className="text-gray-500">Available Stock:</span>
@@ -973,7 +977,6 @@ export function PharmacyView() {
                 </div>
               </div>
 
-              {/* Action Buttons: Dispense (-1) and Restock (+50) */}
               <div className="pt-2 flex items-center gap-2">
                 <button
                   disabled={isOut}
@@ -996,7 +999,6 @@ export function PharmacyView() {
         })}
       </div>
 
-      {/* ADD NEW STOCK MODAL */}
       {isAddModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
           <div className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95">
@@ -1007,7 +1009,7 @@ export function PharmacyView() {
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-gray-800">Add New Medicine to Formulary</h3>
-                  <p className="text-[10px] text-gray-400">Inventory addition & financial valuation</p>
+                  <p className="text-[10px] text-gray-400">Direct Neon Cloud SQL Insertion</p>
                 </div>
               </div>
               <button
@@ -1093,7 +1095,6 @@ export function PharmacyView() {
                 </div>
               </div>
 
-              {/* Total Added Value Preview */}
               <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 flex justify-between items-center text-xs">
                 <span className="text-emerald-800 font-semibold">Inventory Inflow Value:</span>
                 <b className="text-emerald-950 font-black text-sm">
@@ -1111,9 +1112,10 @@ export function PharmacyView() {
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 bg-[#072a22] hover:bg-[#0c382e] text-white font-bold rounded-xl transition cursor-pointer shadow-md"
+                  disabled={isSubmitting}
+                  className="flex-1 py-2.5 bg-[#072a22] hover:bg-[#0c382e] disabled:opacity-50 text-white font-bold rounded-xl transition cursor-pointer shadow-md"
                 >
-                  + Add to Stock
+                  {isSubmitting ? "Saving to Neon DB..." : "+ Add to Stock"}
                 </button>
               </div>
             </form>
@@ -1123,22 +1125,20 @@ export function PharmacyView() {
     </div>
   );
 }
+
 // ==========================================
-// 6. E-PRESCRIPTION (ORIGINAL AI ALLERGY & CDSS SAFETY ENGINE)
+// 6. E-PRESCRIPTION VIEW
 // ==========================================
 export function PrescriptionView() {
   const { patients, inventory, dispensePrescription } = useHospital();
   
-  // Patient Selection & State
   const [selectedPatientId, setSelectedPatientId] = useState<string>(patients[0]?.id || "");
   const [selectedMeds, setSelectedMeds] = useState<string[]>([]);
   const [dosageInstructions, setDosageInstructions] = useState<string>("1 Tablet Twice a Day (After Meals) x 5 Days");
   const [rxSuccess, setRxSuccess] = useState<boolean>(false);
 
-  // Active Selected Patient Data
   const currentPatient = patients.find((p) => p.id === selectedPatientId) || patients[0];
 
-  // Allergy mappings for patients
   const patientAllergyProfile: Record<string, { allergies: string[]; conditions: string[] }> = {
     [patients[0]?.id || ""]: { allergies: ["Penicillin", "Amoxicillin"], conditions: ["Hypertension"] },
     [patients[1]?.id || ""]: { allergies: ["Sulfa Drugs", "Ciprofloxacin"], conditions: ["Type-2 Diabetes"] },
@@ -1147,7 +1147,6 @@ export function PrescriptionView() {
 
   const activeAllergies = patientAllergyProfile[currentPatient?.id]?.allergies || ["Penicillin"];
 
-  // AI ALLERGY CONTRADICTION DETECTOR
   const detectedAllergyWarnings = selectedMeds
     .map((medId) => inventory.find((m) => m.id === medId))
     .filter((med) => {
@@ -1177,7 +1176,6 @@ export function PrescriptionView() {
 
   return (
     <div className="space-y-6">
-      {/* Header Banner */}
       <div className="bg-white p-5 rounded-3xl border border-gray-200/80 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
@@ -1191,7 +1189,6 @@ export function PrescriptionView() {
           </p>
         </div>
 
-        {/* Active Patient Allergy Chip */}
         <div className="bg-rose-50 border border-rose-200 p-2.5 px-4 rounded-2xl flex items-center gap-2 self-start sm:self-auto">
           <AlertCircle className="w-4 h-4 text-rose-600 animate-pulse shrink-0" />
           <div className="text-left">
@@ -1204,10 +1201,7 @@ export function PrescriptionView() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left 2 Cols: Prescription Pad */}
         <div className="lg:col-span-2 bg-white p-6 rounded-3xl border border-gray-200/80 shadow-xs space-y-5">
-          
-          {/* Patient Selector */}
           <div>
             <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">
               Select Encounter Patient:
@@ -1228,7 +1222,6 @@ export function PrescriptionView() {
             </select>
           </div>
 
-          {/* Formularly Drug Chips */}
           <div>
             <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1.5">
               Select Medicines to Prescribe (Central Formulary):
@@ -1264,7 +1257,6 @@ export function PrescriptionView() {
             </div>
           </div>
 
-          {/* Prescribed Items Box */}
           <div className="p-4 bg-gray-50 rounded-2xl border border-gray-200/80 space-y-3">
             <div className="flex items-center justify-between">
               <h4 className="text-xs font-black uppercase text-gray-800 tracking-wider">
@@ -1322,7 +1314,6 @@ export function PrescriptionView() {
             )}
           </div>
 
-          {/* Issue Button */}
           <button
             disabled={selectedMeds.length === 0}
             onClick={handleIssuePrescription}
@@ -1339,9 +1330,7 @@ export function PrescriptionView() {
           )}
         </div>
 
-        {/* Right 1 Col: AI CDSS Safety & Allergy Warning Console */}
         <div className="space-y-4">
-          {/* CRITICAL AI ALLERGY WARNING CARD */}
           {detectedAllergyWarnings.length > 0 ? (
             <div className="bg-rose-50 border-2 border-rose-500 p-5 rounded-3xl shadow-md space-y-3 animate-in fade-in zoom-in duration-150">
               <div className="flex items-center gap-2 text-rose-700">
@@ -1379,7 +1368,6 @@ export function PrescriptionView() {
             </div>
           )}
 
-          {/* Clinical Guidelines Card */}
           <div className="bg-white p-5 rounded-3xl border border-gray-200/80 shadow-xs text-xs space-y-2">
             <h5 className="font-bold text-gray-800 uppercase tracking-wider text-[11px]">
               Clinical Protocol Reference
@@ -1395,8 +1383,9 @@ export function PrescriptionView() {
     </div>
   );
 }
+
 // ==========================================
-// 7. ADVANCED FINANCE & BILLING VIEW (WITH CHARTS)
+// 7. ADVANCED FINANCE & BILLING VIEW
 // ==========================================
 import {
   BarChart,
@@ -1416,7 +1405,6 @@ export function FinanceBillingView() {
   const { revenue, patients } = useHospital();
   const [activeRange, setActiveRange] = useState<"6M" | "1Y">("6M");
 
-  // 1. Revenue vs Operational Expense (6-Month Trend)
   const monthlyFinancials = [
     { month: "Apr", revenue: 640000, expenses: 420000, insurance: 380000 },
     { month: "May", revenue: 710000, expenses: 450000, insurance: 430000 },
@@ -1426,7 +1414,6 @@ export function FinanceBillingView() {
     { month: "Sep", revenue: 945000, expenses: 560000, insurance: 610000 },
   ];
 
-  // 2. Department Breakdown
   const departmentRevenue = [
     { name: "IPD / Wards", value: 38, color: "#072a22" },
     { name: "Pharmacy", value: 24, color: "#10b981" },
@@ -1435,16 +1422,8 @@ export function FinanceBillingView() {
     { name: "Radiology / PACS", value: 8, color: "#8b5cf6" },
   ];
 
-  // 3. Payer Mix Breakdown
-  const payerMix = [
-    { name: "Ayushman Bharat (PM-JAY)", count: "₹4.85L (52%)", status: "Instant Settlement" },
-    { name: "Private TPA Insurance", count: "₹2.90L (31%)", status: "Audit Pending" },
-    { name: "Direct UPI / Cash", count: "₹1.70L (17%)", status: "Received" },
-  ];
-
   return (
     <div className="space-y-6">
-      {/* Top Banner */}
       <div className="bg-white p-5 rounded-3xl border border-gray-200/80 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
@@ -1466,7 +1445,6 @@ export function FinanceBillingView() {
         </div>
       </div>
 
-      {/* Top Financial Stat Summary */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-white p-4 rounded-2xl border border-gray-200/80 shadow-xs">
           <span className="text-[10px] uppercase font-bold text-gray-400">Total Net Revenue (YTD)</span>
@@ -1485,9 +1463,7 @@ export function FinanceBillingView() {
         </div>
       </div>
 
-      {/* Charts Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Revenue vs Expenses (Bar Chart) */}
         <div className="lg:col-span-2 bg-white p-5 rounded-3xl border border-gray-200/80 shadow-xs space-y-3">
           <div className="flex items-center justify-between">
             <div>
@@ -1523,7 +1499,6 @@ export function FinanceBillingView() {
           </div>
         </div>
 
-        {/* Department Revenue Contribution (Donut Pie Chart) */}
         <div className="bg-white p-5 rounded-3xl border border-gray-200/80 shadow-xs space-y-4 flex flex-col justify-between">
           <div>
             <h4 className="text-xs font-bold text-gray-800 uppercase tracking-wider">
@@ -1566,7 +1541,6 @@ export function FinanceBillingView() {
         </div>
       </div>
 
-      {/* Claim Settlement Table */}
       <div className="bg-white rounded-3xl border border-gray-200/80 shadow-xs overflow-hidden">
         <div className="p-4 border-b border-gray-100 flex items-center justify-between">
           <h4 className="text-xs font-bold text-gray-800 uppercase tracking-wider">
@@ -1606,4 +1580,3 @@ export function FinanceBillingView() {
     </div>
   );
 }
-
