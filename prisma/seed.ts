@@ -17,14 +17,37 @@ async function main() {
   // 3. Populate Ward & Critical Care Beds
   console.log("🛏️ Configuring hospital bed capacity...");
   const bedsData = [
-    { ward: "Cardio-Thoracic ICU", number: "ICU-BAY-01", status: "Available" },
-    { ward: "Red Zone Trauma Bay", number: "TRAUMA-RESUS-02", status: "Available" },
-    { ward: "Plastic & Burn Sterile Unit", number: "BURN-STERILE-03", status: "Available" },
-    { ward: "General Ward", number: "GEN-WARD-04", status: "Available" },
-    { ward: "General Ward", number: "GEN-WARD-05", status: "Available" },
-    { ward: "Emergency Observation", number: "EMERG-OBS-06", status: "Available" },
-  ];
+    // 1. Intensive Care Unit (ICU) - 4 Beds
+  { ward: "Cardio-Thoracic ICU", number: "ICU-BAY-01", status: "Available" },
+  { ward: "Cardio-Thoracic ICU", number: "ICU-BAY-02", status: "Available" },
+  { ward: "Neuro ICU", number: "ICU-BAY-03", status: "Available" },
+  { ward: "Neonatal / Pediatric ICU", number: "ICU-BAY-04", status: "Available" },
 
+  // 2. Emergency & Trauma Resus - 4 Beds
+  { ward: "Red Zone Trauma Bay", number: "TRAUMA-RESUS-01", status: "Available" },
+  { ward: "Red Zone Trauma Bay", number: "TRAUMA-RESUS-02", status: "Available" },
+  { ward: "Triage Observation", number: "EMERG-OBS-01", status: "Available" },
+  { ward: "Triage Observation", number: "EMERG-OBS-02", status: "Available" },
+
+  // 3. Specialized Units - 2 Beds
+  { ward: "Plastic & Burn Sterile Unit", number: "BURN-STERILE-01", status: "Available" },
+  { ward: "Plastic & Burn Sterile Unit", number: "BURN-STERILE-02", status: "Available" },
+
+  // 4. General Medical Ward (Male/Female) - 6 Beds
+  { ward: "General Ward (Male)", number: "GEN-WARD-01", status: "Available" },
+  { ward: "General Ward (Male)", number: "GEN-WARD-02", status: "Available" },
+  { ward: "General Ward (Male)", number: "GEN-WARD-03", status: "Available" },
+  { ward: "General Ward (Female)", number: "GEN-WARD-04", status: "Available" },
+  { ward: "General Ward (Female)", number: "GEN-WARD-05", status: "Available" },
+  { ward: "General Ward (Female)", number: "GEN-WARD-06", status: "Available" },
+
+  // 5. Post-Operative & Day Care - 4 Beds
+  { ward: "Post-Op Recovery", number: "POST-OP-01", status: "Available" },
+  { ward: "Post-Op Recovery", number: "POST-OP-02", status: "Available" },
+  { ward: "Day Care / Dialysis", number: "DAYCARE-01", status: "Available" },
+  { ward: "Day Care / Dialysis", number: "DAYCARE-02", status: "Available" },
+];
+   
   for (const bed of bedsData) {
     await prisma.bed.upsert({
       where: { number: bed.number },
