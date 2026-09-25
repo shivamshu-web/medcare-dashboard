@@ -784,33 +784,29 @@ export function PharmacyView() {
     };
 
     try {
-      if (addMedicine) {
-        // Direct Neon DB insert via HospitalContext
-        const saved = await addMedicine(payload);
-        if (saved) {
-          setLocalInventory((prev: any[]) => [saved, ...prev]);
-        }
-      } else {
-        // Direct fetch fallback if context is not ready
-        const res = await fetch("/api/hospital-state", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ type: "ADD_MEDICINE", payload }),
-        });
-        if (res.ok) {
-          const saved = await res.json();
-          setLocalInventory((prev: any[]) => [saved, ...prev]);
-        }
-      }
+      // Direct call to dedicated medicine API
+      const res = await fetch("/api/medicines", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
 
-      setIsAddModalOpen(false);
-      // Reset Form
-      setNewMedName("");
-      setNewMedGeneric("");
-      setNewMedStock(100);
-      setNewMedPrice(45);
-    } catch (err) {
-      console.error("Failed to add medicine to Neon:", err);
+      if (res.ok) {
+        const saved = await res.json();
+        // Turant state update karein
+        setLocalInventory((prev: any[]) => [saved, ...prev]);
+        setIsAddModalOpen(false);
+        // Form reset
+        setNewMedName("");
+        setNewMedGeneric("");
+        setNewMedStock(100);
+        setNewMedPrice(45);
+      } else {
+        const err = await res.json();
+        alert("DB Error: " + (err.error || "Failed to save"));
+      }
+    } catch (err: any) {
+      alert("Network Error: " + err.message);
     } finally {
       setIsSubmitting(false);
     }
