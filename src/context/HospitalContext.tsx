@@ -112,13 +112,29 @@ export function HospitalProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // 1. Initial Load + 4-Second Live Polling (Sync between Laptop and Phone)
-  useEffect(() => {
-    syncHospitalState();
-    const interval = setInterval(syncHospitalState, 4000);
-    return () => clearInterval(interval);
-  }, [syncHospitalState]);
+  // Jahan bhi polling ya initial fetch ho raha hai:
+useEffect(() => {
+  const syncData = async () => {
+    try {
+      // Direct relative path use karein taaki CORS error na aaye
+      const res = await fetch("/api/patients", {
+        cache: "no-store",
+        headers: { "Pragma": "no-cache" }
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        setPatients(data);
+      }
+    } catch (err) {
+      console.warn("Sync error:", err);
+    }
+  };
 
+  syncData();
+  const interval = setInterval(syncData, 4000); // 4 sec auto sync
+  return () => clearInterval(interval);
+}, []);
   // Central Patient Addition
   const addPatient = async (newPt: PatientData): Promise<boolean> => {
     try {
