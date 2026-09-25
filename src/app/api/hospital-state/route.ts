@@ -23,6 +23,9 @@ export async function OPTIONS() {
   return NextResponse.json({}, { headers: corsHeaders });
 }
 
+// ========================================================
+// 1. GET: Saare Modules (Patients, Beds, Inventory, Blood)
+// ========================================================
 export async function GET() {
   try {
     // 1. Fetch Patients from Neon Cloud
@@ -57,7 +60,7 @@ export async function GET() {
       };
     });
 
-    // 2. Fetch Beds, Appointments, Inventory safely agar models bane hain
+    // 2. Fetch Beds, Appointments, Inventory safely
     let beds: any[] = [];
     let appointments: any[] = [];
     let inventory: any[] = [];
@@ -65,13 +68,13 @@ export async function GET() {
     let labQueue: any[] = [];
 
     try {
-      if ((prisma as any).bed) beds = await (prisma as any).bed.findMany();
-      if ((prisma as any).appointment) appointments = await (prisma as any).appointment.findMany();
-      if ((prisma as any).medicine) inventory = await (prisma as any).medicine.findMany();
-      if ((prisma as any).bloodStock) bloodStock = await (prisma as any).bloodStock.findMany();
-      if ((prisma as any).labItem) labQueue = await (prisma as any).labItem.findMany();
+      if ((prisma as any).bed) beds = await (prisma as any).bed.findMany({ orderBy: { number: "asc" } });
+      if ((prisma as any).appointment) appointments = await (prisma as any).appointment.findMany({ orderBy: { createdAt: "desc" } });
+      if ((prisma as any).medicine) inventory = await (prisma as any).medicine.findMany({ orderBy: { name: "asc" } });
+      if ((prisma as any).bloodStock) bloodStock = await (prisma as any).bloodStock.findMany({ orderBy: { group: "asc" } });
+      if ((prisma as any).labItem) labQueue = await (prisma as any).labItem.findMany({ orderBy: { createdAt: "desc" } });
     } catch (e) {
-      // Fallback silently if tables are being set up
+      console.warn("Table fetch warning:", e);
     }
 
     return NextResponse.json(
@@ -96,16 +99,89 @@ export async function GET() {
   }
 }
 
+// ========================================================
+// 2. POST: Direct Site se Medicine ya Naya Record Add karna
+// ========================================================
+export async function POST(req: Request) {
+  try {
+    const body = await req.json();
+
+    // Check if adding medicine
+    if (body.type === "ADD_MEDICINE" || body.name) {
+      const medData = body.payload || body;
+
+      const newMed = await (prisma as any).medicine.create({
+        data: {
+          name: medData.name,
+          genericName: medData.genericName || medData.name,
+          category: medData.category || "Tablet",
+          batch: medData.batch || `BT-${Math.floor(1000 + Math.random() * 9000)}`,
+          stock: Number(medData.stock) || 100,
+          unitPrice: Number(medData.unitPrice) || 20.0,
+          expiry: medData.expiry || "12/2028",
+        },
+      });
+
+      console.log("✅ Medicine added directly to Neon DB:", newMed.name);
+      return NextResponse.json(newMed, { status: 201, headers: corsHeaders });
+    }
+
+    return NextResponse.json({ error: "Invalid action type" }, { status: 400, headers: corsHeaders });
+  } catch (error: any) {
+    console.error("POST /api/hospital-state error:", error);
+    return NextResponse.json(
+      { error: error.message || "Failed to create resource" },
+      { status: 500, headers: corsHeaders }
+    );
+  }
+}
+
+// ========================================================
+// 3. PATCH: Beds, Stock, Blood, Labs sabhi ka Update Handle
+// ========================================================
 export async function PATCH(req: Request) {
   try {
     const body = await req.json();
     const { type, payload } = body;
 
-    // Bed updates sync handling
+    // 1. Bed Updates
     if (type === "UPDATE_BED" && (prisma as any).bed && payload?.id) {
-      await (prisma as any).bed.update({
+      // Find bed by number or id
+      const existing = await (prisma as any).bed.findFirst({
+        where: {
+          OR: [{ id: payload.id }, { number: payload.id }],
+        },
+      });
+
+      if (existing) {
+        await (prisma as any).bed.update({
+          where: { id: existing.id },
+          data: payload.data,
+        });
+      }
+    }
+
+    // 2. Pharmacy Stock Update
+    if (type === "UPDATE_STOCK" && (prisma as any).medicine && payload?.id) {
+      await (prisma as any).medicine.update({
         where: { id: payload.id },
-        data: payload.data,
+        data: { stock: Number(payload.stock) },
+      });
+    }
+
+    // 3. Blood Bank Unit Update
+    if (type === "UPDATE_BLOOD" && (prisma as any).bloodStock && payload?.group) {
+      await (prisma as any).bloodStock.update({
+        where: { group: payload.group },
+        data: { unitsAvailable: Number(payload.unitsAvailable) },
+      });
+    }
+
+    // 4. Lab Test Queue Update
+    if (type === "UPDATE_LAB" && (prisma as any).labItem && payload?.token) {
+      await (prisma as any).labItem.update({
+        where: { token: payload.token },
+        data: { status: payload.status },
       });
     }
 
