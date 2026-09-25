@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
   User,
   Calendar,
@@ -19,6 +19,7 @@ import {
   ShieldCheck,
   ChevronRight,
   Eye,
+  RefreshCw,
 } from "lucide-react";
 import { useHospital } from "@/context/HospitalContext";
 
@@ -35,11 +36,26 @@ export default function PatientTableView({
 }: PatientTableViewProps) {
   const context = useHospital() as any;
   const deletePatient = context?.deletePatient;
+  const refreshPatients = context?.refreshPatients;
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStatus, setSelectedStatus] = useState<string>("All");
   const [selectedGender, setSelectedGender] = useState<string>("All");
   const [viewMode, setViewMode] = useState<"Table" | "Cards">("Table");
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Auto-refresh from Neon DB on mount
+  useEffect(() => {
+    if (refreshPatients) {
+      refreshPatients();
+    }
+  }, [refreshPatients]);
+
+  const handleManualRefresh = async () => {
+    setIsRefreshing(true);
+    if (refreshPatients) await refreshPatients();
+    setTimeout(() => setIsRefreshing(false), 500);
+  };
 
   // Format Date & Time safely
   const formatDateTime = (dateStr?: string) => {
@@ -62,7 +78,7 @@ export default function PatientTableView({
 
   // Helper check for Code Red / Critical Emergency
   const isEmergencyCase = (p: any) => {
-    const text = `${p.complaint || ""} ${p.diagnosis || ""} ${p.status || ""}`.toLowerCase();
+    const text = `${p.complaint || p.symptoms || ""} ${p.diagnosis || p.caseNotes || ""} ${p.status || ""}`.toLowerCase();
     return (
       text.includes("code red") ||
       text.includes("critical") ||
@@ -73,17 +89,14 @@ export default function PatientTableView({
     );
   };
 
-  // Hybrid Single Source of Truth: Merge Context with LocalStorage
+  // 100% PURE NEON DATABASE SYNC (No LocalStorage overrides)
   const verifiedPatients = useMemo(() => {
-    let local: any[] = [];
-    if (typeof window !== "undefined") {
-      try {
-        local = JSON.parse(localStorage.getItem("medcare_patients_db") || "[]");
-      } catch (e) {}
-    }
+    const sourceList = (context?.patients && context.patients.length > 0)
+      ? context.patients
+      : (propPatients || []);
 
     const uniqueMap = new Map();
-    [...(context?.patients || []), ...local, ...(propPatients || [])].forEach((p) => {
+    sourceList.forEach((p: any) => {
       if (p?.id) uniqueMap.set(p.id, p);
     });
 
@@ -98,7 +111,9 @@ export default function PatientTableView({
         (p.name && p.name.toLowerCase().includes(q)) ||
         (p.abhaId && p.abhaId.toLowerCase().includes(q)) ||
         (p.diagnosis && p.diagnosis.toLowerCase().includes(q)) ||
+        (p.caseNotes && p.caseNotes.toLowerCase().includes(q)) ||
         (p.complaint && p.complaint.toLowerCase().includes(q)) ||
+        (p.symptoms && p.symptoms.toLowerCase().includes(q)) ||
         (p.bedNumber && p.bedNumber.toLowerCase().includes(q)) ||
         (p.contact && p.contact.toLowerCase().includes(q));
 
@@ -106,7 +121,7 @@ export default function PatientTableView({
 
       let matchesStatus = true;
       if (selectedStatus === "Emergency") matchesStatus = isEmergency;
-      else if (selectedStatus === "Admitted") matchesStatus = p.status === "Admitted" && !isEmergency;
+      else if (selectedStatus === "Admitted") matchesStatus = (p.status === "Admitted" || p.bedNumber) && !isEmergency;
       else if (selectedStatus === "OPD") matchesStatus = p.status === "OPD" || (!p.bedNumber && !isEmergency);
       else if (selectedStatus === "Discharged") matchesStatus = p.status === "Discharged" || p.bedNumber === "Discharged";
 
@@ -119,22 +134,20 @@ export default function PatientTableView({
     });
   }, [verifiedPatients, searchQuery, selectedStatus, selectedGender]);
 
-  // Handle Record Deletion
-  const handleDelete = (e: React.MouseEvent, id: string, name: string) => {
+  // Handle Record Deletion directly from Neon DB
+  const handleDelete = async (e: React.MouseEvent, id: string, name: string) => {
     e.stopPropagation();
-    if (window.confirm(`Are you sure you want to permanently remove case record for "${name}"?`)) {
+    if (window.confirm(`Are you sure you want to permanently delete record for "${name}" from Neon Database?`)) {
       if (deletePatient) {
-        deletePatient(id);
+        await deletePatient(id);
+      } else {
+        await fetch(`/api/patients?id=${id}`, { method: "DELETE" });
+        if (refreshPatients) refreshPatients();
       }
-      try {
-        const stored = JSON.parse(localStorage.getItem("medcare_patients_db") || "[]");
-        const filtered = stored.filter((p: any) => p.id !== id);
-        localStorage.setItem("medcare_patients_db", JSON.stringify(filtered));
-      } catch (err) {}
     }
   };
 
-  // Metric calculation
+  // Metric calculations
   const totalCount = verifiedPatients.length;
   const emergencyCount = verifiedPatients.filter((p: any) => isEmergencyCase(p)).length;
   const admittedCount = verifiedPatients.filter(
@@ -160,17 +173,24 @@ export default function PatientTableView({
                     Central Inpatient & Clinical Cases Repository
                   </h1>
                   <span className="bg-emerald-100 text-emerald-800 text-[10px] font-black px-2.5 py-0.5 rounded-md uppercase tracking-wider">
-                    ABHA / ABDM Linked
+                    Neon Cloud SQL Linked
                   </span>
                 </div>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  Synchronized electronic health records (EHR) with verified Ward Bed allocations, diagnostic logs, and continuous timestamps.
+                  Live synchronized electronic health records (EHR) directly reading PostgreSQL Patient table.
                 </p>
               </div>
             </div>
           </div>
 
           <div className="flex items-center gap-3">
+            <button
+              onClick={handleManualRefresh}
+              className="p-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-2xl transition cursor-pointer"
+              title="Refresh from Neon DB"
+            >
+              <RefreshCw className={`w-4 h-4 ${isRefreshing ? "animate-spin text-emerald-600" : ""}`} />
+            </button>
             <button
               onClick={onOpenModal}
               className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl text-xs font-black transition flex items-center gap-2 shadow-md shadow-emerald-600/20 cursor-pointer"
@@ -195,7 +215,7 @@ export default function PatientTableView({
             </span>
             <h3 className="text-2xl font-black mt-1">{totalCount}</h3>
             <span className={`text-[10px] mt-0.5 block ${selectedStatus === "All" ? "text-gray-400" : "text-gray-400"}`}>
-              Central Patient Database
+              Live Neon Database
             </span>
           </div>
 
@@ -345,7 +365,7 @@ export default function PatientTableView({
                       <div className="flex flex-col items-center justify-center space-y-2">
                         <User className="w-8 h-8 text-gray-300" />
                         <p className="text-sm font-bold text-gray-500">No matching patient case records found</p>
-                        <span className="text-xs text-gray-400">Try adjusting your search query or triage filters</span>
+                        <span className="text-xs text-gray-400">Database connected. Add a new patient intake above.</span>
                       </div>
                     </td>
                   </tr>
@@ -353,6 +373,17 @@ export default function PatientTableView({
                   filteredPatients.map((patient: any) => {
                     const isEmergency = isEmergencyCase(patient);
                     const { date, time } = formatDateTime(patient.createdAt);
+
+                    // Normalize vitals display
+                    let vitalsDisplay = patient.vitals || "BP 120/80, SpO2 98%";
+                    if (typeof patient.vitals === "string" && patient.vitals.startsWith("{")) {
+                      try {
+                        const parsed = JSON.parse(patient.vitals);
+                        vitalsDisplay = `BP ${parsed.bp || patient.bp || "120/80"}, P: ${parsed.pulse || patient.pulse || 76}`;
+                      } catch (e) {}
+                    } else if (patient.bp) {
+                      vitalsDisplay = `BP ${patient.bp}, P: ${patient.pulse || 76}`;
+                    }
 
                     return (
                       <tr
@@ -436,10 +467,10 @@ export default function PatientTableView({
                                 isEmergency ? "text-rose-700" : "text-gray-900"
                               }`}
                             >
-                              {patient.diagnosis || patient.complaint || "Routine Clinical Intake"}
+                              {patient.diagnosis || patient.caseNotes || patient.complaint || "Routine Clinical Intake"}
                             </span>
                             <span className="text-[10px] text-gray-400 truncate block mt-0.5">
-                              {patient.complaint || patient.treatment || "Standard protocol active"}
+                              {patient.complaint || patient.symptoms || patient.treatment || "Standard protocol active"}
                             </span>
                           </div>
                         </td>
@@ -463,7 +494,7 @@ export default function PatientTableView({
                           <div className="flex items-center gap-1.5 text-xs font-bold text-gray-700">
                             <Activity className={`w-4 h-4 shrink-0 ${isEmergency ? "text-rose-600 animate-pulse" : "text-emerald-600"}`} />
                             <span className="truncate max-w-[130px] font-mono text-[11px]">
-                              {patient.vitals || "BP 120/80, SpO2 98%"}
+                              {vitalsDisplay}
                             </span>
                           </div>
                         </td>
@@ -474,7 +505,7 @@ export default function PatientTableView({
                             <button
                               onClick={() => onSelectPatient(patient)}
                               className="p-2 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition cursor-pointer"
-                              title="View Patient Chart"
+                              title="View Patient Slip"
                             >
                               <Eye className="w-4 h-4" />
                             </button>
@@ -541,13 +572,13 @@ export default function PatientTableView({
 
                   <div className="bg-white/80 p-3 rounded-2xl border border-gray-100 space-y-1.5 text-xs">
                     <p className="font-bold text-gray-800 line-clamp-1">
-                      Dx: {patient.diagnosis || patient.complaint || "Clinical Case"}
+                      Dx: {patient.diagnosis || patient.caseNotes || patient.complaint || "Clinical Case"}
                     </p>
                     <p className="text-[11px] text-gray-500 flex items-center gap-1 font-mono">
                       <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" /> {patient.abhaId || "ABHA Verified"}
                     </p>
                     <p className="text-[11px] text-gray-500 flex items-center gap-1 font-mono">
-                      <Activity className="w-3.5 h-3.5 text-rose-600" /> {patient.vitals || "BP Normal"}
+                      <Activity className="w-3.5 h-3.5 text-rose-600" /> {patient.bp ? `BP ${patient.bp}` : "BP Normal"}
                     </p>
                   </div>
                 </div>
