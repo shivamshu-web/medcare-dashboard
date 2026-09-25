@@ -101,9 +101,12 @@ export function HospitalProvider({ children }: { children: React.ReactNode }) {
       });
       if (!res.ok) return;
       const data = await res.json();
-      if (Array.isArray(data)) {
-        setPatients(data);
-      }
+      if (Array.isArray(data.patients)) setPatients(data.patients);
+      if (Array.isArray(data.beds)) setBeds(data.beds);
+      if (Array.isArray(data.inventory)) setInventory(data.inventory);
+      if (Array.isArray(data.bloodStock)) setBloodStock(data.bloodStock);
+      if (Array.isArray(data.appointments)) setAppointments(data.appointments);
+      if (Array.isArray(data.labQueue)) setLabQueue(data.labQueue);
     } catch (err) {
       console.warn("Neon SQL Polling Sync Error:", err);
     }
