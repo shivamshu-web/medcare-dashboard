@@ -144,29 +144,43 @@ export function HospitalProvider({ children }: { children: React.ReactNode }) {
   const registerNewPatientWorkflow = async (data: any) => {
     return await addPatient(data);
   };
-
   const triggerEmergencyTriage = async (traumaTypeOrData: any, age?: number, gender?: string, notes?: string) => {
+    // Unique Random ABHA ID generate karna taaki Neon database reject na kare
+    const randomSuffix = Math.floor(100000 + Math.random() * 900000);
+    const generatedAbha = `91-RED-${randomSuffix}`;
+
     let payload: any;
 
     if (typeof traumaTypeOrData === "object" && traumaTypeOrData !== null) {
       payload = {
-        ...traumaTypeOrData,
-        name: traumaTypeOrData.name || "CODE RED STAT RESUS",
+        name: traumaTypeOrData.name || `RED-CODE STAT RESUS`,
+        age: Number(traumaTypeOrData.age) || 35,
+        gender: traumaTypeOrData.gender || "Male",
+        contact: traumaTypeOrData.contact || "+91 99999 00000",
+        bloodGroup: traumaTypeOrData.bloodGroup || "O+",
+        abhaId: traumaTypeOrData.abhaId || generatedAbha,
+        symptoms: traumaTypeOrData.symptoms || traumaTypeOrData.complaint || "CRITICAL EMERGENCY: Immediate Trauma Care",
+        caseNotes: traumaTypeOrData.caseNotes || traumaTypeOrData.diagnosis || "STAT PROTOCOL ACTIVATED: Resuscitation Line Open",
+        bp: traumaTypeOrData.bp || "80/50 (Critical)",
+        pulse: Number(traumaTypeOrData.pulse) || 140,
+        temperature: String(traumaTypeOrData.temperature || "99.0"),
         status: "Critical Resus",
-        bedNumber: "TRAUMA-RESUS-01",
+        bedNumber: traumaTypeOrData.bedNumber || "TRAUMA-RESUS-01",
       };
     } else {
-      const traumaType = String(traumaTypeOrData || "Critical Trauma");
+      const traumaType = String(traumaTypeOrData || "Severe Trauma / Shock");
       payload = {
-        name: `RED-CODE (${traumaType}) [${(gender || "M").charAt(0)}/${age || 30}Y]`,
-        abhaId: `91-RED-${Date.now().toString().slice(-6)}`,
-        age: age || 30,
+        name: `RED-CODE (${traumaType}) [${(gender || "M").charAt(0)}/${age || 35}Y]`,
+        age: Number(age) || 35,
         gender: gender || "Male",
-        bp: "Unstable (STAT)",
-        pulse: 135,
-        temperature: "99.1",
+        contact: "+91 99999 00000",
+        bloodGroup: "O+",
+        abhaId: generatedAbha,
         symptoms: `ACUTE RED CODE: ${traumaType}. ${notes || ""}`,
         caseNotes: `STAT PROTOCOL ACTIVATED: Immediate resuscitation line established. Priority Level 1 Triage.`,
+        bp: "80/50 (Critical)",
+        pulse: 140,
+        temperature: "99.0",
         status: "Critical Resus",
         bedNumber: "TRAUMA-RESUS-01",
       };
@@ -174,9 +188,11 @@ export function HospitalProvider({ children }: { children: React.ReactNode }) {
 
     setActiveEmergency(true);
     setRevenue((prev) => prev + 2500);
-    return await addPatient(payload);
-  };
 
+    // Seedha Neon Cloud SQL database me bhejte hain
+    const saved = await addPatient(payload);
+    return saved;
+  };
   const dismissEmergency = () => {
     setActiveEmergency(false);
   };
