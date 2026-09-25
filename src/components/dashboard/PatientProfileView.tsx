@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import {
   Heart,
   Activity,
@@ -12,7 +12,9 @@ import {
   Building2,
   FileText,
   Calendar,
+  Trash2,
 } from "lucide-react";
+import { useHospital } from "@/context/HospitalContext";
 
 export interface PatientData {
   id: string;
@@ -39,10 +41,36 @@ export default function PatientProfileView({
   patient,
   onClose,
 }: PatientProfileViewProps) {
+  const { deletePatient } = useHospital() as any;
+  const [isDeleting, setIsDeleting] = useState(false);
+
   if (!isOpen || !patient) return null;
 
   const handlePrint = () => {
     window.print();
+  };
+
+  const handleDelete = async () => {
+    const confirmed = window.confirm(
+      `Kya aap sach me "${patient.name}" ka record Neon Database se permanently delete karna chahte hain?`
+    );
+    if (!confirmed) return;
+
+    setIsDeleting(true);
+    try {
+      if (deletePatient) {
+        await deletePatient(patient.id);
+      } else {
+        // Fallback direct API delete
+        await fetch(`/api/patients?id=${patient.id}`, { method: "DELETE" });
+      }
+      onClose();
+    } catch (err) {
+      console.error("Delete failed:", err);
+      alert("Database se delete karne me error aaya.");
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   const formattedDate = patient.createdAt
@@ -71,6 +99,16 @@ export default function PatientProfileView({
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {/* Delete Patient Button */}
+            <button
+              type="button"
+              disabled={isDeleting}
+              onClick={handleDelete}
+              className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-black text-xs rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+            >
+              <Trash2 className="w-3.5 h-3.5" /> {isDeleting ? "Deleting..." : "Delete Case"}
+            </button>
+
             <button
               onClick={handlePrint}
               className="px-3.5 py-1.5 bg-emerald-400 hover:bg-emerald-300 text-[#072a22] font-black text-xs rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer"
