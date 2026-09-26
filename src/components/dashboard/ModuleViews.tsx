@@ -234,12 +234,96 @@ export function AppointmentsView({ onNewIntake }: { onNewIntake?: () => void }) 
 }
 
 // ==========================================
-// 2. ADVANCED LAB REPORTS VIEW
+// 2. ADVANCED LAB REPORTS VIEW (NEON DB CONNECTED)
 // ==========================================
 export function LabReportsView() {
-  const { labQueue, updateLabStatus } = useHospital();
-  const [selectedReport, setSelectedReport] = useState<LabItem | null>(null);
+  const { labQueue, updateLabStatus, patients, refreshPatients } = useHospital() as any;
+  const [selectedReport, setSelectedReport] = useState<any | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
+  const [isOrdering, setIsOrdering] = useState(false);
+
+  // New Lab Order State
+  const [selectedPatient, setSelectedPatient] = useState("");
+  const [selectedTest, setSelectedTest] = useState("Complete Blood Count (CBC)");
+  const [prescribingDoctor, setPrescribingDoctor] = useState("Dr. Anjali Rao");
+
+  // Local state synced with context
+  const [localLabQueue, setLocalLabQueue] = useState<any[]>(labQueue || []);
+
+  React.useEffect(() => {
+    if (Array.isArray(labQueue)) {
+      setLocalLabQueue(labQueue);
+    }
+  }, [labQueue]);
+
+  // Handle Mark Ready directly with Neon DB
+  const handleMarkReady = async (token: string) => {
+    setLocalLabQueue((prev) =>
+      prev.map((l) => (l.token === token ? { ...l, status: "Analysis Complete" } : l))
+    );
+
+    if (updateLabStatus) {
+      updateLabStatus(token, "Analysis Complete");
+    }
+
+    try {
+      await fetch("/api/hospital-state", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "UPDATE_LAB",
+          payload: { token, status: "Analysis Complete" },
+        }),
+      });
+      if (refreshPatients) await refreshPatients();
+    } catch (e) {
+      console.error("Failed to update lab status in DB:", e);
+    }
+  };
+
+  // Handle Create New Lab Test Order (FIXED & CONNECTED TO NEON DB)
+  const handleCreateLabOrder = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedPatient || isOrdering) return;
+
+    setIsOrdering(true);
+
+    const payload = {
+      patient: selectedPatient,
+      test: selectedTest,
+      doctor: prescribingDoctor || "Dr. Anjali Rao",
+    };
+
+    try {
+      const res = await fetch("/api/hospital-state", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "ADD_LAB_ORDER",
+          payload,
+        }),
+      });
+
+      if (res.ok) {
+        const created = await res.json();
+        setLocalLabQueue((prev) => [created, ...prev]);
+        if (refreshPatients) {
+          await refreshPatients();
+        }
+        setIsOrderModalOpen(false);
+        setSelectedPatient("");
+      } else {
+        const err = await res.json();
+        alert("Failed to order lab test: " + (err.error || "DB Error"));
+      }
+    } catch (err: any) {
+      console.error("Error creating lab order:", err);
+      alert("Network Error: " + err.message);
+    } finally {
+      setIsOrdering(false);
+    }
+  };
 
   const sampleResultsMap: Record<string, { param: string; value: string; ref: string; status: "Normal" | "High" | "Low" }[]> = {
     "Complete Blood Count (CBC)": [
@@ -263,51 +347,49 @@ export function LabReportsView() {
     { param: "Quality Control (QC)", value: "Passed (Delta Check OK)", ref: "100%", status: "Normal" as const },
   ];
 
-  const filteredLabs = labQueue.filter((l) =>
-    l.patient.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    l.token.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    l.test.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredLabs = (localLabQueue || []).filter((l: any) =>
+    (l.patient && l.patient.toLowerCase().includes(searchQuery.toLowerCase())) ||
+    (l.token && l.token.toLowerCase().includes(searchQuery.toLowerCase())) ||
+    (l.test && l.test.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
   return (
     <div className="space-y-6">
+      {/* Top Banner with Order Button */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-3xl border border-gray-200/80 shadow-xs">
         <div>
           <div className="flex items-center gap-2">
             <h2 className="text-lg font-bold text-gray-800">Diagnostic Pathology & LIS Workbench</h2>
             <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-100 text-blue-800">
-              NABL / ABDM Certified
+              Neon Cloud Synced
             </span>
           </div>
           <p className="text-xs text-gray-500 mt-0.5">
-            Automated sample barcode tracking, analyzer centrifugation, and HL7 FHIR export
+            Real-time analyzer queue, biomarker analysis, and automated digital signing
           </p>
         </div>
 
-        <div className="relative w-full sm:w-72">
-          <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            placeholder="Search sample token or patient..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 text-xs bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:bg-white focus:border-emerald-600"
-          />
+        <div className="flex items-center gap-2.5">
+          <button
+            onClick={() => setIsOrderModalOpen(true)}
+            className="px-4 py-2.5 bg-[#072a22] hover:bg-[#0c382e] text-white text-xs font-bold rounded-2xl transition flex items-center gap-2 cursor-pointer shadow-xs"
+          >
+            <Plus className="w-4 h-4 text-emerald-400" />
+            <span>Order New Diagnostic Test</span>
+          </button>
         </div>
       </div>
 
+      {/* Lab Cards Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-        {filteredLabs.map((lab) => {
+        {filteredLabs.map((lab: any) => {
           const isComplete = lab.status === "Analysis Complete" || lab.status === "Ready";
-          const isCritical = lab.status.includes("CRITICAL") || lab.status.includes("STAT");
 
           return (
             <div
               key={lab.token}
               className={`p-5 rounded-3xl border transition flex flex-col justify-between ${
-                isCritical
-                  ? "bg-rose-50/50 border-rose-200"
-                  : isComplete
+                isComplete
                   ? "bg-emerald-50/30 border-emerald-200"
                   : "bg-white border-gray-200/80 hover:border-blue-400 shadow-xs"
               }`}
@@ -317,42 +399,34 @@ export function LabReportsView() {
                   <span className="font-mono font-bold text-xs bg-gray-100 px-2.5 py-1 rounded-xl text-gray-800">
                     {lab.token}
                   </span>
-
                   <span
                     className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                      isCritical
-                        ? "bg-rose-100 text-rose-800 animate-pulse"
-                        : isComplete
-                        ? "bg-emerald-100 text-emerald-800"
-                        : "bg-amber-100 text-amber-800"
+                      isComplete ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800 animate-pulse"
                     }`}
                   >
                     {lab.status}
                   </span>
                 </div>
 
-                <div className="my-3 space-y-1.5">
+                <div className="my-3 space-y-1">
                   <h4 className="text-sm font-bold text-gray-900">{lab.test}</h4>
-                  <p className="text-xs font-semibold text-gray-600">Patient: {lab.patient}</p>
-                  <p className="text-[10px] text-gray-400">Prescribing Clinician: {lab.doctor}</p>
-                  <div className="flex items-center gap-1.5 text-[10px] font-mono text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md inline-block">
-                    <Clock className="w-3 h-3 inline" /> Estimated TAT: {lab.tat}
-                  </div>
+                  <p className="text-xs font-semibold text-gray-700">Patient: {lab.patient}</p>
+                  <p className="text-[10px] text-gray-400">Clinician: {lab.doctor}</p>
+                  <span className="text-[10px] text-blue-600 font-mono block">TAT: {lab.tat}</span>
                 </div>
               </div>
 
               <div className="pt-3 border-t border-gray-100 flex items-center justify-between gap-2">
                 <button
                   onClick={() => setSelectedReport(lab)}
-                  className="px-3 py-1.5 bg-[#072a22] hover:bg-[#0c382e] text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 cursor-pointer"
+                  className="px-3 py-1.5 bg-[#072a22] text-white text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer"
                 >
-                  <Eye className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>View Slip</span>
+                  <Eye className="w-3.5 h-3.5 text-emerald-400" /> View Slip
                 </button>
 
                 {!isComplete && (
                   <button
-                    onClick={() => updateLabStatus(lab.token, "Analysis Complete")}
+                    onClick={() => handleMarkReady(lab.token)}
                     className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition cursor-pointer"
                   >
                     Mark Ready
@@ -364,6 +438,84 @@ export function LabReportsView() {
         })}
       </div>
 
+      {/* New Test Order Modal */}
+      {isOrderModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+          <div className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b pb-3">
+              <h3 className="text-sm font-bold text-gray-900">Order Diagnostic Pathology Test</h3>
+              <button onClick={() => setIsOrderModalOpen(false)} className="text-gray-400 hover:text-gray-600 cursor-pointer">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateLabOrder} className="space-y-3 text-xs">
+              <div>
+                <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Select Patient</label>
+                <select
+                  required
+                  value={selectedPatient}
+                  onChange={(e) => setSelectedPatient(e.target.value)}
+                  className="w-full p-2.5 bg-gray-50 border rounded-xl font-semibold"
+                >
+                  <option value="">-- Choose Admitted Patient --</option>
+                  {(patients || []).map((p: any) => (
+                    <option key={p.id} value={p.name}>
+                      {p.name} ({p.bedNumber || "OPD"})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Diagnostic Investigation</label>
+                <select
+                  value={selectedTest}
+                  onChange={(e) => setSelectedTest(e.target.value)}
+                  className="w-full p-2.5 bg-gray-50 border rounded-xl font-semibold"
+                >
+                  <option value="Complete Blood Count (CBC)">Complete Blood Count (CBC)</option>
+                  <option value="Lipid Profile & Serum Creatinine">Lipid Profile & Serum Creatinine</option>
+                  <option value="Arterial Blood Gas (ABG) & Lactate">Arterial Blood Gas (ABG) & Lactate</option>
+                  <option value="Liver Function Panel (LFT)">Liver Function Panel (LFT)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Prescribing Clinician</label>
+                <select
+                  value={prescribingDoctor}
+                  onChange={(e) => setPrescribingDoctor(e.target.value)}
+                  className="w-full p-2.5 bg-gray-50 border rounded-xl font-semibold"
+                >
+                  <option value="Dr. Anjali Rao">Dr. Anjali Rao (Pathologist)</option>
+                  <option value="Dr. Verma">Dr. Verma (Physician)</option>
+                  <option value="Dr. Morgan">Dr. Morgan (Trauma Lead)</option>
+                </select>
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsOrderModalOpen(false)}
+                  className="flex-1 py-2 bg-gray-100 text-gray-700 font-bold rounded-xl cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isOrdering}
+                  className="flex-1 py-2 bg-[#072a22] hover:bg-[#0c382e] disabled:opacity-50 text-white font-bold rounded-xl shadow-md cursor-pointer"
+                >
+                  {isOrdering ? "Ordering..." : "Confirm Lab Order"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Slip Modal */}
       {selectedReport && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 backdrop-blur-xs p-4 overflow-y-auto">
           <div className="bg-white w-full max-w-2xl rounded-3xl p-6 shadow-2xl space-y-5 border border-gray-100 my-6 animate-in fade-in zoom-in-95">
@@ -716,10 +868,9 @@ export function CaseIntakeView({ onOpenIntake }: { onOpenIntake?: () => void }) 
 }
 
 // ==========================================
-// 5. ADVANCED PHARMACY INVENTORY & VALUATION ENGINE (CONNECTED TO NEON DB)
+// 5. ADVANCED PHARMACY INVENTORY & VALUATION ENGINE
 // ==========================================
 export function PharmacyView() {
-  // YAHAN addMedicine KO EXTRACT KIYA GAYA HAI
   const { inventory, dispensePrescription, restockMedicine, addMedicine } = useHospital() as any;
   
   const [searchQuery, setSearchQuery] = useState("");
@@ -735,14 +886,12 @@ export function PharmacyView() {
   const [newMedPrice, setNewMedPrice] = useState(45);
   const [newMedBatch, setNewMedBatch] = useState("BATCH-99");
 
-  // Direct sync from live database inventory
   const [localInventory, setLocalInventory] = useState(inventory);
 
   React.useEffect(() => {
     setLocalInventory(inventory);
   }, [inventory]);
 
-  // Handle Dispense (-1)
   const handleDispense = (id: string) => {
     dispensePrescription(id);
     setLocalInventory((prev: any[]) =>
@@ -754,7 +903,6 @@ export function PharmacyView() {
     );
   };
 
-  // Handle Restock (+Qty)
   const handleRestock = (id: string, qty: number) => {
     restockMedicine(id, qty);
     setLocalInventory((prev: any[]) =>
@@ -766,7 +914,6 @@ export function PharmacyView() {
     );
   };
 
-  // 100% PURE NEON CLOUD DATABASE PERSISTENCE FOR ADD MEDICINE
   const handleAddNewMedicine = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMedName.trim() || isSubmitting) return;
@@ -784,35 +931,35 @@ export function PharmacyView() {
     };
 
     try {
-      // Direct call to dedicated medicine API
-      const res = await fetch("/api/medicines", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      if (res.ok) {
-        const saved = await res.json();
-        // Turant state update karein
-        setLocalInventory((prev: any[]) => [saved, ...prev]);
-        setIsAddModalOpen(false);
-        // Form reset
-        setNewMedName("");
-        setNewMedGeneric("");
-        setNewMedStock(100);
-        setNewMedPrice(45);
+      if (addMedicine) {
+        const saved = await addMedicine(payload);
+        if (saved) {
+          setLocalInventory((prev: any[]) => [saved, ...prev]);
+        }
       } else {
-        const err = await res.json();
-        alert("DB Error: " + (err.error || "Failed to save"));
+        const res = await fetch("/api/hospital-state", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ type: "ADD_MEDICINE", payload }),
+        });
+        if (res.ok) {
+          const saved = await res.json();
+          setLocalInventory((prev: any[]) => [saved, ...prev]);
+        }
       }
-    } catch (err: any) {
-      alert("Network Error: " + err.message);
+
+      setIsAddModalOpen(false);
+      setNewMedName("");
+      setNewMedGeneric("");
+      setNewMedStock(100);
+      setNewMedPrice(45);
+    } catch (err) {
+      console.error("Failed to add medicine to Neon:", err);
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // Calculations
   const filteredInventory = localInventory.filter((med: any) => {
     const matchesSearch =
       (med.name && med.name.toLowerCase().includes(searchQuery.toLowerCase())) ||

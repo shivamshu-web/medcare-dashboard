@@ -176,20 +176,34 @@ export async function PATCH(req: Request) {
         data: { unitsAvailable: Number(payload.unitsAvailable) },
       });
     }
-
-    // 4. Lab Test Queue Update
-    if (type === "UPDATE_LAB" && (prisma as any).labItem && payload?.token) {
+    // 4. Lab Updates / Orders
+    if (type === "UPDATE_LAB" && payload?.token && (prisma as any).labItem) {
       await (prisma as any).labItem.update({
         where: { token: payload.token },
         data: { status: payload.status },
       });
+      return NextResponse.json({ success: true }, { headers: corsHeaders });
+    }
+
+    if (type === "ADD_LAB_ORDER" && payload && (prisma as any).labItem) {
+      const lab = await (prisma as any).labItem.create({
+        data: {
+          token: `LAB-${Math.floor(1000 + Math.random() * 9000)}`,
+          test: payload.test,
+          patient: payload.patient,
+          doctor: payload.doctor || "Dr. Verma",
+          status: "In Analyzer Queue",
+          tat: "45 Mins",
+        },
+      });
+      return NextResponse.json(lab, { status: 201, headers: corsHeaders });
     }
 
     return NextResponse.json({ success: true }, { headers: corsHeaders });
   } catch (error: any) {
     console.error("PATCH /api/hospital-state error:", error);
     return NextResponse.json(
-      { error: error.message || "Failed to update state" },
+      { error: error?.message || "Failed to update hospital state" },
       { status: 500, headers: corsHeaders }
     );
   }
