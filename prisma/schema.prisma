@@ -9,21 +9,24 @@ generator client {
 
 // 1. Patient Cases / Code Red Intakes
 model Patient {
-  id          String   @id @default(uuid())
-  name        String
-  age         Int
-  gender      String
-  contact     String?
-  bloodGroup  String?
-  abhaId      String   @unique
-  complaint   String?
-  diagnosis   String?
-  treatment   String?
-  vitals      String?  // JSON stringified: { bp, pulse, temperature, spO2 }
-  bedNumber   String?
-  status      String   @default("Admitted")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id         String     @id @default(uuid())
+  name       String
+  age        Int
+  gender     String
+  contact    String?
+  bloodGroup String?
+  abhaId     String     @unique
+  complaint  String?
+  diagnosis  String?
+  treatment  String?
+  vitals     String?    // JSON stringified: { bp, pulse, temperature, spO2 }
+  bedNumber  String?
+  status     String     @default("Admitted")
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  // Lab items relation
+  labItems   LabItem[]
 
   @@index([abhaId])
   @@index([status])
@@ -46,12 +49,17 @@ model LabItem {
   token     String   @unique
   test      String
   patient   String
-  doctor    String
-  status    String   @default("In-Queue") // In-Queue, In-Process, Completed
-  tat       String   @default("45 mins")
+  doctor    String   @default("Dr. Verma")
+  status    String   @default("In Analyzer Queue")
+  tat       String   @default("45 Mins")
   createdAt DateTime @default(now())
 
+  // Patient relation (optional tan nulled theih tura siam a ni)
+  patientId String?
+  patientRel Patient? @relation(fields: [patientId], references: [id], onDelete: SetNull)
+
   @@index([token])
+  @@index([patientId])
 }
 
 // 4. Pharmacy Formulary & Medicine Stock
@@ -64,6 +72,7 @@ model Medicine {
   stock       Int      @default(0)
   unitPrice   Float    @default(0.0)
   expiry      String
+  createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
 

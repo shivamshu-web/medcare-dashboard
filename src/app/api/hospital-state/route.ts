@@ -184,21 +184,30 @@ export async function PATCH(req: Request) {
       });
       return NextResponse.json({ success: true }, { headers: corsHeaders });
     }
+    // Case A: ADD NEW LAB ORDER
+if (body.type === "ADD_LAB_ORDER") {
+  const payload = body.payload || body;
 
-    if (type === "ADD_LAB_ORDER" && payload && (prisma as any).labItem) {
-      const lab = await (prisma as any).labItem.create({
-        data: {
-          token: `LAB-${Math.floor(1000 + Math.random() * 9000)}`,
-          test: payload.test,
-          patient: payload.patient,
-          doctor: payload.doctor || "Dr. Verma",
-          status: "In Analyzer Queue",
-          tat: "45 Mins",
-        },
-      });
-      return NextResponse.json(lab, { status: 201, headers: corsHeaders });
-    }
+  // Patient zawn hmuh hmasak phawt
+  const existingPatient = await prisma.patient.findFirst({
+    where: { name: payload.patient },
+  });
 
+  const newLab = await prisma.labItem.create({
+    data: {
+      token: payload.token || `LAB-${Math.floor(1000 + Math.random() * 9000)}`,
+      test: String(payload.test || "Complete Blood Count (CBC)"),
+      patient: String(payload.patient || "Admitted Patient"),
+      doctor: String(payload.doctor || "Dr. Verma"),
+      status: String(payload.status || "In Analyzer Queue"),
+      tat: String(payload.tat || "45 Mins"),
+      patientId: existingPatient ? existingPatient.id : null,
+    },
+  });
+
+  return NextResponse.json(newLab, { status: 201, headers: corsHeaders });
+}
+    
     return NextResponse.json({ success: true }, { headers: corsHeaders });
   } catch (error: any) {
     console.error("PATCH /api/hospital-state error:", error);
