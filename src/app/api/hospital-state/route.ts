@@ -24,7 +24,7 @@ export async function OPTIONS() {
 }
 
 // ========================================================
-// 1. GET: Saare Modules (Patients, Beds, Inventory, Blood)
+// 1. GET: Saare Modules (Patients, Beds, Inventory, Blood, Appointments, Labs)
 // ========================================================
 export async function GET() {
   try {
@@ -100,14 +100,14 @@ export async function GET() {
 }
 
 // ========================================================
-// POST Handler in /api/hospital-state/route.ts
+// 2. POST: Lab Order, Medicine, Appointment Create
 // ========================================================
 export async function POST(req: Request) {
   try {
     const body = await req.json();
     console.log("📥 Incoming POST /api/hospital-state payload:", body);
 
-    // 1. LAB ORDER CREATE (Chahe Lab view se aaye ya Blood Bank se)
+    // 1. LAB ORDER CREATE (Lab View ya Blood Bank Dispatch se)
     if (body.type === "ADD_LAB_ORDER") {
       const payload = body.payload || body;
       const generatedToken = payload.token || `LAB-${Math.floor(1000 + Math.random() * 9000)}`;
@@ -127,7 +127,27 @@ export async function POST(req: Request) {
       return NextResponse.json(createdLab, { status: 201, headers: corsHeaders });
     }
 
-    // 2. MEDICINE CREATE
+    // 2. APPOINTMENT BOOKING (Neon DB Create)
+    if (body.type === "BOOK_APPOINTMENT") {
+      const aptData = body.payload || body;
+      const generatedId = `APT-${Math.floor(1000 + Math.random() * 9000)}`;
+
+      const newApt = await prisma.appointment.create({
+        data: {
+          id: generatedId,
+          patient: String(aptData.patient || "Walk-in Patient").trim(),
+          doctor: String(aptData.doctor || "Dr. Verma").trim(),
+          time: String(aptData.time || "10:30 AM"),
+          type: String(aptData.type || "Routine Consult"),
+          status: String(aptData.status || "Confirmed"),
+        },
+      });
+
+      console.log("✅ Appointment saved to Neon DB:", newApt.id);
+      return NextResponse.json(newApt, { status: 201, headers: corsHeaders });
+    }
+
+    // 3. MEDICINE CREATE
     if (body.type === "ADD_MEDICINE" || body.name) {
       const medData = body.payload || body;
       const cleanStock = Math.max(0, parseInt(String(medData.stock || 50), 10) || 50);
@@ -158,8 +178,9 @@ export async function POST(req: Request) {
     );
   }
 }
+
 // ========================================================
-// 3. PATCH: Beds, Stock, Blood, Labs sabhi ka Update Handle
+// 3. PATCH: Beds, Stock, Blood, Appointment, Lab Status Update
 // ========================================================
 export async function PATCH(req: Request) {
   try {
@@ -168,7 +189,6 @@ export async function PATCH(req: Request) {
 
     // 1. Bed Updates
     if (type === "UPDATE_BED" && (prisma as any).bed && payload?.id) {
-      // Find bed by number or id
       const existing = await (prisma as any).bed.findFirst({
         where: {
           OR: [{ id: payload.id }, { number: payload.id }],
@@ -181,24 +201,37 @@ export async function PATCH(req: Request) {
           data: payload.data,
         });
       }
+      return NextResponse.json({ success: true }, { headers: corsHeaders });
     }
 
-    // 2. Pharmacy Stock Update
+    // 2. Appointment Status Update (Confirmed / In Progress / Completed)
+    if (type === "UPDATE_APPOINTMENT" && payload?.id) {
+      await prisma.appointment.update({
+        where: { id: payload.id },
+        data: { status: payload.status },
+      });
+      return NextResponse.json({ success: true }, { headers: corsHeaders });
+    }
+
+    // 3. Pharmacy Stock Update
     if (type === "UPDATE_STOCK" && (prisma as any).medicine && payload?.id) {
       await (prisma as any).medicine.update({
         where: { id: payload.id },
         data: { stock: Number(payload.stock) },
       });
+      return NextResponse.json({ success: true }, { headers: corsHeaders });
     }
 
-    // 3. Blood Bank Unit Update
+    // 4. Blood Bank Unit Update
     if (type === "UPDATE_BLOOD" && (prisma as any).bloodStock && payload?.group) {
       await (prisma as any).bloodStock.update({
         where: { group: payload.group },
         data: { unitsAvailable: Number(payload.unitsAvailable) },
       });
+      return NextResponse.json({ success: true }, { headers: corsHeaders });
     }
-    // 4. Lab Updates / Orders
+
+    // 5. Lab Updates / Status Change
     if (type === "UPDATE_LAB" && payload?.token && (prisma as any).labItem) {
       await (prisma as any).labItem.update({
         where: { token: payload.token },
@@ -206,30 +239,7 @@ export async function PATCH(req: Request) {
       });
       return NextResponse.json({ success: true }, { headers: corsHeaders });
     }
-    // Case A: ADD NEW LAB ORDER
-if (body.type === "ADD_LAB_ORDER") {
-  const payload = body.payload || body;
 
-  // Patient zawn hmuh hmasak phawt
-  const existingPatient = await prisma.patient.findFirst({
-    where: { name: payload.patient },
-  });
-
-  const newLab = await prisma.labItem.create({
-    data: {
-      token: payload.token || `LAB-${Math.floor(1000 + Math.random() * 9000)}`,
-      test: String(payload.test || "Complete Blood Count (CBC)"),
-      patient: String(payload.patient || "Admitted Patient"),
-      doctor: String(payload.doctor || "Dr. Verma"),
-      status: String(payload.status || "In Analyzer Queue"),
-      tat: String(payload.tat || "45 Mins"),
-      patientId: existingPatient ? existingPatient.id : null,
-    },
-  });
-
-  return NextResponse.json(newLab, { status: 201, headers: corsHeaders });
-}
-    
     return NextResponse.json({ success: true }, { headers: corsHeaders });
   } catch (error: any) {
     console.error("PATCH /api/hospital-state error:", error);

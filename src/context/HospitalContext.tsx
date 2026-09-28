@@ -72,6 +72,8 @@ interface HospitalContextType {
   restockMedicine: (medId: string, qty?: number) => void;
   addLabOrder: (labData: { patient: string; test: string; doctor?: string; priority?: string }) => Promise<any>;
   updateLabStatus: (token: string, newStatus: string) => void;
+  bookAppointment: (aptData: { patient: string; doctor: string; time: string; type: string }) => Promise<any>;
+  updateAppointmentStatus: (id: string, newStatus: string) => Promise<void>;
   deletePatient: (id: string) => Promise<boolean>;
   addMedicine: (medData: any) => Promise<any>;
   admitPatientToBed: (bedId: string, patientName: string, abhaId: string) => void;
@@ -346,6 +348,63 @@ export function HospitalProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
+  // 4. BOOK APPOINTMENT (DIRECT NEON DB PERSISTENCE)
+  const bookAppointment = async (aptData: { patient: string; doctor: string; time: string; type: string }) => {
+    const generatedId = `APT-${Math.floor(1000 + Math.random() * 9000)}`;
+    const newApt: AppointmentItem = {
+      id: generatedId,
+      patient: aptData.patient,
+      doctor: aptData.doctor,
+      time: aptData.time,
+      type: aptData.type,
+      status: "Confirmed",
+    };
+
+    // Instant UI render
+    setAppointments((prev) => [newApt, ...prev]);
+
+    try {
+      const res = await fetch("/api/hospital-state", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "BOOK_APPOINTMENT",
+          payload: newApt,
+        }),
+      });
+
+      if (res.ok) {
+        const saved = await res.json();
+        setAppointments((prev) => [saved, ...prev.filter((a) => a.id !== generatedId)]);
+        syncHospitalState();
+        return saved;
+      }
+    } catch (e) {
+      console.error("Failed to save appointment to Neon DB:", e);
+    }
+    return newApt;
+  };
+
+  // 5. UPDATE APPOINTMENT STATUS (DIRECT NEON DB UPDATE)
+  const updateAppointmentStatus = async (id: string, newStatus: string) => {
+    setAppointments((prev) =>
+      prev.map((apt) => (apt.id === id ? { ...apt, status: newStatus } : apt))
+    );
+
+    try {
+      await fetch("/api/hospital-state", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "UPDATE_APPOINTMENT",
+          payload: { id, status: newStatus },
+        }),
+      });
+    } catch (e) {
+      console.error("Failed to update appointment status in Neon DB:", e);
+    }
+  };
+
   const admitPatientToBed = async (bedId: string, patientName: string, abhaId: string) => {
     const dataUpdate: Partial<BedItem> = {
       status: "Occupied",
@@ -490,6 +549,8 @@ export function HospitalProvider({ children }: { children: React.ReactNode }) {
         deletePatient,
         addMedicine,
         addLabOrder,
+        bookAppointment,
+        updateAppointmentStatus,
         registerNewPatient: addPatient,
         registerNewPatientWorkflow,
         triggerEmergencyTriage,
