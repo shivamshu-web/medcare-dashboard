@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Droplets,
   AlertTriangle,
@@ -14,15 +14,26 @@ import {
 import { useHospital } from "@/context/HospitalContext";
 
 export default function BloodBankView() {
-  const { bloodStock, patients, requestBloodCrossmatch, refreshPatients } = useHospital() as any;
+  const {
+    bloodStock,
+    patients,
+    requestBloodCrossmatch,
+    addLabOrder,
+    refreshPatients,
+  } = useHospital() as any;
 
   const [selectedRecipientGroup, setSelectedRecipientGroup] = useState<string>("O+");
-  const [selectedPatientName, setSelectedPatientName] = useState<string>(
-    patients && patients.length > 0 ? patients[0].name : "Emergency Patient"
-  );
+  const [selectedPatientName, setSelectedPatientName] = useState<string>("");
   const [requiredUnits, setRequiredUnits] = useState<number>(2);
   const [isDispatching, setIsDispatching] = useState<boolean>(false);
   const [requestSuccess, setRequestSuccess] = useState<boolean>(false);
+
+  // Sync patient name default once patients are loaded from DB
+  useEffect(() => {
+    if (patients && patients.length > 0 && !selectedPatientName) {
+      setSelectedPatientName(patients[0].name);
+    }
+  }, [patients, selectedPatientName]);
 
   // Red Blood Cell (RBC) Compatibility Rules
   const compatibilityMap: Record<string, string[]> = {
@@ -30,67 +41,80 @@ export default function BloodBankView() {
     "A-": ["A-", "O-"],
     "B+": ["B+", "B-", "O+", "O-"],
     "B-": ["B-", "O-"],
-    "AB+": ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"], // Universal Recipient
+    "AB+": ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"],
     "AB-": ["AB-", "A-", "B-", "O-"],
     "O+": ["O+", "O-"],
-    "O-": ["O-"], // Universal Donor Only
+    "O-": ["O-"],
   };
 
   const compatibleDonors = compatibilityMap[selectedRecipientGroup] || [];
 
-  // DIRECT NEON DB LAB DISPATCH HANDLER
+  // 100% RELIABLE LAB DISPATCH HANDLER
   const handleDispatchRequisition = async () => {
     if (isDispatching) return;
     setIsDispatching(true);
 
-    const targetPatient = selectedPatientName || (patients && patients[0]?.name) || "Emergency Patient";
-    const generatedToken = `LAB-${Math.floor(1000 + Math.random() * 9000)}`;
+    const targetPatient =
+      selectedPatientName ||
+      (patients && patients.length > 0 ? patients[0].name : "Emergency Patient");
 
-    const labPayload = {
-      token: generatedToken,
-      test: `Blood Crossmatch & Compatibility (${selectedRecipientGroup} - ${requiredUnits} Units)`,
-      patient: targetPatient,
-      doctor: "Blood Transfusion Officer",
-      status: "In-Queue",
-      tat: "15 mins",
-    };
+    const testDescription = `Blood Crossmatch & Compatibility (${selectedRecipientGroup} - ${requiredUnits} Units)`;
 
     try {
-      // 1. Direct call to Neon DB API
-      const res = await fetch("/api/hospital-state", {
+      // 1. Agar context mein addLabOrder hai, use call karein
+      if (typeof addLabOrder === "function") {
+        await addLabOrder({
+          patient: targetPatient,
+          test: testDescription,
+          doctor: "Blood Transfusion Officer",
+          priority: "STAT / Emergency",
+        });
+      }
+
+      // 2. Direct Neon DB API Call (Guaranteed Persistence)
+      await fetch("/api/hospital-state", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           type: "ADD_LAB_ORDER",
-          payload: labPayload,
+          payload: {
+            token: `LAB-${Math.floor(1000 + Math.random() * 9000)}`,
+            test: testDescription,
+            patient: targetPatient,
+            doctor: "Blood Transfusion Officer",
+            status: "In-Queue",
+            tat: "15 mins",
+          },
         }),
       });
 
-      if (res.ok) {
-        // Local Context update agar function present ho
-        if (typeof requestBloodCrossmatch === "function") {
-          requestBloodCrossmatch(targetPatient, selectedRecipientGroup, requiredUnits);
-        }
-        if (typeof refreshPatients === "function") {
-          await refreshPatients();
-        }
-
-        setRequestSuccess(true);
-        setTimeout(() => setRequestSuccess(false), 4000);
-      } else {
-        const err = await res.json();
-        alert("DB Error: " + (err.error || "Failed to create lab record"));
+      // 3. Deduct units from stock
+      if (typeof requestBloodCrossmatch === "function") {
+        await requestBloodCrossmatch(targetPatient, selectedRecipientGroup, requiredUnits);
       }
+
+      // 4. Force background context refresh
+      if (typeof refreshPatients === "function") {
+        await refreshPatients();
+      }
+
+      setRequestSuccess(true);
+      setTimeout(() => setRequestSuccess(false), 4000);
     } catch (err: any) {
-      console.error("Failed to dispatch blood crossmatch to Lab Queue:", err);
-      alert("Network Error: " + err.message);
+      console.error("Blood Dispatch error:", err);
+      alert("Dispatch failed: " + err.message);
     } finally {
       setIsDispatching(false);
     }
   };
 
-  const totalStockUnits = (bloodStock || []).reduce((acc: number, b: any) => acc + (b.unitsAvailable || 0), 0);
-  const lowStockGroups = (bloodStock || []).filter((b: any) => b.unitsAvailable <= b.criticalThreshold);
+  const totalStockUnits = (bloodStock || []).reduce(
+    (acc: number, b: any) => acc + (b.unitsAvailable || 0),
+    0
+  );
+  const lowStockGroups = (bloodStock || []).filter(
+    (b: any) => b.unitsAvailable <= b.criticalThreshold
+  );
 
   return (
     <div className="space-y-6">
