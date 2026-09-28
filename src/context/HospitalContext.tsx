@@ -11,6 +11,7 @@ export interface LabItem {
   doctor: string;
   status: string;
   tat: string;
+  createdAt?: string;
 }
 
 export interface AppointmentItem {
@@ -69,13 +70,14 @@ interface HospitalContextType {
   triggerEmergencyTriage: (traumaTypeOrData: any, age?: number, gender?: string, notes?: string) => Promise<any>;
   dispensePrescription: (medId: string) => void;
   restockMedicine: (medId: string, qty?: number) => void;
+  addLabOrder: (labData: { patient: string; test: string; doctor?: string; priority?: string }) => Promise<any>;
   updateLabStatus: (token: string, newStatus: string) => void;
   deletePatient: (id: string) => Promise<boolean>;
   addMedicine: (medData: any) => Promise<any>;
   admitPatientToBed: (bedId: string, patientName: string, abhaId: string) => void;
   dischargeBed: (bedId: string) => void;
   sanitizeBed: (bedId: string) => void;
-  requestBloodCrossmatch: (patientName: string, bloodGroup: string, units: number) => void;
+  requestBloodCrossmatch: (patientName: string, bloodGroup: string, units: number) => Promise<void>;
 }
 
 const HospitalContext = createContext<HospitalContextType | undefined>(undefined);
@@ -93,7 +95,7 @@ export function HospitalProvider({ children }: { children: React.ReactNode }) {
   const [revenue, setRevenue] = useState(842500);
   const [activeEmergency, setActiveEmergency] = useState(false);
 
-  // 1. Neon Cloud Database Fetch Function (FIXED: Calls both endpoints properly)
+  // 1. Neon Cloud Database Fetch Function (Fetches all real-time state)
   const syncHospitalState = useCallback(async () => {
     try {
       // 1. Fetch Patients from /api/patients
@@ -110,7 +112,7 @@ export function HospitalProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      // 2. Fetch Beds, Inventory, Blood, Appointments, Lab from /api/hospital-state
+      // 2. Fetch Beds, Inventory, Blood, Appointments, Lab Queue from /api/hospital-state
       const stateRes = await fetch("/api/hospital-state", {
         cache: "no-store",
         headers: { "Pragma": "no-cache", "Cache-Control": "no-cache" },
@@ -149,7 +151,6 @@ export function HospitalProvider({ children }: { children: React.ReactNode }) {
       if (res.ok) {
         const savedPatient = await res.json();
         setPatients((prev: any[]) => [savedPatient, ...prev.filter((p: any) => p.id !== savedPatient.id)]);
-        // Turant background sync trigger
         syncHospitalState();
         return savedPatient;
       } else {
@@ -170,10 +171,8 @@ export function HospitalProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (res.ok) {
-        // Screen aur local state se turant remove karein
         setPatients((prev: any[]) => prev.filter((p: any) => p.id !== id));
         syncHospitalState();
-        console.log("✅ Patient deleted from Neon DB:", id);
         return true;
       } else {
         const err = await res.json();
@@ -234,13 +233,13 @@ export function HospitalProvider({ children }: { children: React.ReactNode }) {
     setActiveEmergency(true);
     setRevenue((prev) => prev + 2500);
 
-    const saved = await addPatient(payload);
-    return saved;
+    return await addPatient(payload);
   };
 
   const dismissEmergency = () => {
     setActiveEmergency(false);
   };
+
   // Direct Medicine Add to Neon Database
   const addMedicine = async (medData: any) => {
     try {
@@ -255,7 +254,6 @@ export function HospitalProvider({ children }: { children: React.ReactNode }) {
 
       if (res.ok) {
         const createdMed = await res.json();
-        // Screen par turant reflect ho:
         setInventory((prev) => [createdMed, ...prev]);
         syncHospitalState();
         return createdMed;
@@ -297,6 +295,43 @@ export function HospitalProvider({ children }: { children: React.ReactNode }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type: "UPDATE_STOCK", payload: { id: medId, stock: newStock } }),
     });
+  };
+
+  // DIRECT ADD LAB ORDER FUNCTION (Syncs directly to Neon DB)
+  const addLabOrder = async (labData: { patient: string; test: string; doctor?: string; priority?: string }) => {
+    const generatedToken = `LAB-${Math.floor(1000 + Math.random() * 9000)}`;
+    const newOrder: LabItem = {
+      token: generatedToken,
+      test: labData.test,
+      patient: labData.patient,
+      doctor: labData.doctor || "Dr. Verma",
+      status: "In-Queue",
+      tat: labData.priority === "STAT / Emergency" ? "15 mins" : "45 mins",
+    };
+
+    // Instant local update
+    setLabQueue((prev) => [newOrder, ...prev]);
+
+    try {
+      const res = await fetch("/api/hospital-state", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "ADD_LAB_ORDER",
+          payload: newOrder,
+        }),
+      });
+
+      if (res.ok) {
+        const saved = await res.json();
+        setLabQueue((prev) => [saved, ...prev.filter((l) => l.token !== generatedToken)]);
+        syncHospitalState();
+        return saved;
+      }
+    } catch (e) {
+      console.error("Failed to add Lab Order to Neon DB:", e);
+    }
+    return newOrder;
   };
 
   const updateLabStatus = async (token: string, newStatus: string) => {
@@ -381,6 +416,7 @@ export function HospitalProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // BLOOD CROSSMATCH: DEDUCTS BLOOD STOCK + AUTOMATICALLY CREATES LAB ORDER IN NEON DB
   const requestBloodCrossmatch = async (patientName: string, bloodGroup: string, units: number) => {
     let currentUnits = 0;
     setBloodStock((prev) =>
@@ -394,6 +430,7 @@ export function HospitalProvider({ children }: { children: React.ReactNode }) {
     );
     setRevenue((prev) => prev + units * 1200);
 
+    // 1. Blood Stock Update in Neon DB
     try {
       await fetch("/api/hospital-state", {
         method: "PATCH",
@@ -405,6 +442,33 @@ export function HospitalProvider({ children }: { children: React.ReactNode }) {
       });
     } catch (e) {
       console.warn("Failed to sync blood units to API:", e);
+    }
+
+    // 2. DISPATCH AUTOMATIC LAB ORDER TO NEON DB
+    const generatedToken = `LAB-${Math.floor(1000 + Math.random() * 9000)}`;
+    const crossmatchLabItem: LabItem = {
+      token: generatedToken,
+      test: `Blood Crossmatch & Compatibility (${bloodGroup} - ${units} Units)`,
+      patient: patientName,
+      doctor: "Blood Transfusion Officer",
+      status: "In-Queue",
+      tat: "15 mins",
+    };
+
+    setLabQueue((prev) => [crossmatchLabItem, ...prev]);
+
+    try {
+      await fetch("/api/hospital-state", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "ADD_LAB_ORDER",
+          payload: crossmatchLabItem,
+        }),
+      });
+      syncHospitalState();
+    } catch (e) {
+      console.error("Failed to insert Blood Crossmatch Lab Item to DB:", e);
     }
   };
 
@@ -425,6 +489,7 @@ export function HospitalProvider({ children }: { children: React.ReactNode }) {
         addPatient,
         deletePatient,
         addMedicine,
+        addLabOrder,
         registerNewPatient: addPatient,
         registerNewPatientWorkflow,
         triggerEmergencyTriage,

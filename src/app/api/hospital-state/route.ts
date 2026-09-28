@@ -100,38 +100,60 @@ export async function GET() {
 }
 
 // ========================================================
-// 2. POST: Direct Site se Medicine ya Naya Record Add karna
+// POST Handler in /api/hospital-state/route.ts
 // ========================================================
 export async function POST(req: Request) {
   try {
     const body = await req.json();
     console.log("📥 Incoming POST /api/hospital-state payload:", body);
 
-    const medData = body.payload || body;
+    // 1. LAB ORDER CREATE (Chahe Lab view se aaye ya Blood Bank se)
+    if (body.type === "ADD_LAB_ORDER") {
+      const payload = body.payload || body;
+      const generatedToken = payload.token || `LAB-${Math.floor(1000 + Math.random() * 9000)}`;
 
-    // Guaranteed Unique Batch Number & Clean Types
-    const cleanStock = Math.max(0, parseInt(String(medData.stock || 50), 10) || 50);
-    const cleanPrice = Math.max(0, parseFloat(String(medData.unitPrice || medData.price || 25.0)) || 25.0);
-    const randomBatch = `BT-${Math.floor(1000 + Math.random() * 9000)}`;
+      const createdLab = await prisma.labItem.create({
+        data: {
+          token: generatedToken,
+          test: String(payload.test || "Complete Blood Count (CBC)"),
+          patient: String(payload.patient || "Admitted Patient"),
+          doctor: String(payload.doctor || "Dr. Verma"),
+          status: String(payload.status || "In-Queue"),
+          tat: String(payload.tat || "45 mins"),
+        },
+      });
 
-    const newMed = await (prisma as any).medicine.create({
-      data: {
-        name: String(medData.name || "New Formulary Item").trim(),
-        genericName: String(medData.genericName || medData.generic || medData.name || "Essential Generic").trim(),
-        category: String(medData.category || "Tablet"),
-        batch: String(medData.batch || randomBatch),
-        stock: cleanStock,
-        unitPrice: cleanPrice,
-        expiry: String(medData.expiry || "12/2028"),
-      },
-    });
+      console.log("✅ Lab order created in Neon DB:", createdLab.token);
+      return NextResponse.json(createdLab, { status: 201, headers: corsHeaders });
+    }
 
-    console.log("✅ Medicine saved successfully in Neon DB:", newMed.id, newMed.name);
-    return NextResponse.json(newMed, { status: 201, headers: corsHeaders });
+    // 2. MEDICINE CREATE
+    if (body.type === "ADD_MEDICINE" || body.name) {
+      const medData = body.payload || body;
+      const cleanStock = Math.max(0, parseInt(String(medData.stock || 50), 10) || 50);
+      const cleanPrice = Math.max(0, parseFloat(String(medData.unitPrice || medData.price || 25.0)) || 25.0);
+      const randomBatch = `BT-${Math.floor(1000 + Math.random() * 9000)}`;
+
+      const newMed = await prisma.medicine.create({
+        data: {
+          name: String(medData.name || "New Formulary Item").trim(),
+          genericName: String(medData.genericName || medData.generic || medData.name || "Generic").trim(),
+          category: String(medData.category || "Tablet"),
+          batch: String(medData.batch || randomBatch),
+          stock: cleanStock,
+          unitPrice: cleanPrice,
+          expiry: String(medData.expiry || "12/2028"),
+        },
+      });
+
+      return NextResponse.json(newMed, { status: 201, headers: corsHeaders });
+    }
+
+    return NextResponse.json({ error: "Invalid action type" }, { status: 400, headers: corsHeaders });
   } catch (error: any) {
-    console.error("❌ Prisma Medicine Create Error:", error?.message || error);
+    console.error("❌ Error in POST /api/hospital-state:", error);
     return NextResponse.json(
-      { error: "Failed to create medicine", details: error?.message },
+      { error: error?.message || "Failed to execute DB insert" },
       { status: 500, headers: corsHeaders }
     );
   }

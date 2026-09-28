@@ -14,12 +14,15 @@ import {
 import { useHospital } from "@/context/HospitalContext";
 
 export default function BloodBankView() {
-  const { bloodStock, patients, requestBloodCrossmatch } = useHospital();
+  const { bloodStock, patients, requestBloodCrossmatch, refreshPatients } = useHospital() as any;
 
   const [selectedRecipientGroup, setSelectedRecipientGroup] = useState<string>("O+");
-  const [selectedPatientName, setSelectedPatientName] = useState<string>(patients[0]?.name || "Emergency Patient");
+  const [selectedPatientName, setSelectedPatientName] = useState<string>(
+    patients && patients.length > 0 ? patients[0].name : "Emergency Patient"
+  );
   const [requiredUnits, setRequiredUnits] = useState<number>(2);
-  const [requestSuccess, setRequestSuccess] = useState(false);
+  const [isDispatching, setIsDispatching] = useState<boolean>(false);
+  const [requestSuccess, setRequestSuccess] = useState<boolean>(false);
 
   // Red Blood Cell (RBC) Compatibility Rules
   const compatibilityMap: Record<string, string[]> = {
@@ -35,14 +38,59 @@ export default function BloodBankView() {
 
   const compatibleDonors = compatibilityMap[selectedRecipientGroup] || [];
 
-  const handleDispatchRequisition = () => {
-    requestBloodCrossmatch(selectedPatientName, selectedRecipientGroup, requiredUnits);
-    setRequestSuccess(true);
-    setTimeout(() => setRequestSuccess(false), 4000);
+  // DIRECT NEON DB LAB DISPATCH HANDLER
+  const handleDispatchRequisition = async () => {
+    if (isDispatching) return;
+    setIsDispatching(true);
+
+    const targetPatient = selectedPatientName || (patients && patients[0]?.name) || "Emergency Patient";
+    const generatedToken = `LAB-${Math.floor(1000 + Math.random() * 9000)}`;
+
+    const labPayload = {
+      token: generatedToken,
+      test: `Blood Crossmatch & Compatibility (${selectedRecipientGroup} - ${requiredUnits} Units)`,
+      patient: targetPatient,
+      doctor: "Blood Transfusion Officer",
+      status: "In-Queue",
+      tat: "15 mins",
+    };
+
+    try {
+      // 1. Direct call to Neon DB API
+      const res = await fetch("/api/hospital-state", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "ADD_LAB_ORDER",
+          payload: labPayload,
+        }),
+      });
+
+      if (res.ok) {
+        // Local Context update agar function present ho
+        if (typeof requestBloodCrossmatch === "function") {
+          requestBloodCrossmatch(targetPatient, selectedRecipientGroup, requiredUnits);
+        }
+        if (typeof refreshPatients === "function") {
+          await refreshPatients();
+        }
+
+        setRequestSuccess(true);
+        setTimeout(() => setRequestSuccess(false), 4000);
+      } else {
+        const err = await res.json();
+        alert("DB Error: " + (err.error || "Failed to create lab record"));
+      }
+    } catch (err: any) {
+      console.error("Failed to dispatch blood crossmatch to Lab Queue:", err);
+      alert("Network Error: " + err.message);
+    } finally {
+      setIsDispatching(false);
+    }
   };
 
-  const totalStockUnits = bloodStock.reduce((acc, b) => acc + b.unitsAvailable, 0);
-  const lowStockGroups = bloodStock.filter((b) => b.unitsAvailable <= b.criticalThreshold);
+  const totalStockUnits = (bloodStock || []).reduce((acc: number, b: any) => acc + (b.unitsAvailable || 0), 0);
+  const lowStockGroups = (bloodStock || []).filter((b: any) => b.unitsAvailable <= b.criticalThreshold);
 
   return (
     <div className="space-y-6">
@@ -63,7 +111,7 @@ export default function BloodBankView() {
         {lowStockGroups.length > 0 && (
           <div className="flex items-center gap-2 px-3 py-1.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-xs font-bold animate-pulse">
             <AlertTriangle className="w-4 h-4 text-rose-600" />
-            <span>Critical Deficit: {lowStockGroups.map((g) => g.group).join(", ")}</span>
+            <span>Critical Deficit: {lowStockGroups.map((g: any) => g.group).join(", ")}</span>
           </div>
         )}
       </div>
@@ -79,7 +127,7 @@ export default function BloodBankView() {
         <div className="bg-white p-4 rounded-2xl border border-gray-200/80 shadow-xs">
           <span className="text-[10px] uppercase font-bold text-emerald-700">Universal Donor (O-)</span>
           <h3 className="text-2xl font-black text-emerald-800 mt-1">
-            {bloodStock.find((b) => b.group === "O-")?.unitsAvailable || 0} Units
+            {bloodStock.find((b: any) => b.group === "O-")?.unitsAvailable || 0} Units
           </h3>
           <p className="text-[10px] text-emerald-600 mt-0.5">STAT ER Emergency Reserve</p>
         </div>
@@ -99,7 +147,7 @@ export default function BloodBankView() {
 
       {/* 8 Blood Group Cards Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        {bloodStock.map((b) => {
+        {(bloodStock || []).map((b: any) => {
           const isCritical = b.unitsAvailable <= b.criticalThreshold;
           return (
             <div
@@ -141,7 +189,6 @@ export default function BloodBankView() {
 
       {/* Live Compatibility Crossmatch & Order Console */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left 2 Cols: Order & Crossmatch Calculator */}
         <div className="lg:col-span-2 bg-white p-6 rounded-3xl border border-gray-200/80 shadow-xs space-y-4">
           <div className="flex items-center justify-between">
             <div>
@@ -165,9 +212,9 @@ export default function BloodBankView() {
                 onChange={(e) => setSelectedPatientName(e.target.value)}
                 className="w-full text-xs font-semibold bg-white border border-gray-200 rounded-xl p-2 focus:outline-none"
               >
-                {patients.map((p) => (
+                {(patients || []).map((p: any) => (
                   <option key={p.id} value={p.name}>
-                    {p.name} ({p.abhaId ? p.abhaId.slice(-4) : "OPD"})
+                    {p.name} ({p.bedNumber || "OPD Case"})
                   </option>
                 ))}
               </select>
@@ -180,7 +227,7 @@ export default function BloodBankView() {
                 onChange={(e) => setSelectedRecipientGroup(e.target.value)}
                 className="w-full text-xs font-bold bg-white border border-gray-200 rounded-xl p-2 focus:outline-none text-rose-700"
               >
-                {bloodStock.map((b) => (
+                {(bloodStock || []).map((b: any) => (
                   <option key={b.group} value={b.group}>
                     {b.group} (Group)
                   </option>
@@ -208,7 +255,7 @@ export default function BloodBankView() {
             </span>
             <div className="flex flex-wrap gap-2">
               {compatibleDonors.map((donor) => {
-                const stock = bloodStock.find((b) => b.group === donor)?.unitsAvailable || 0;
+                const stock = bloodStock.find((b: any) => b.group === donor)?.unitsAvailable || 0;
                 return (
                   <span
                     key={donor}
@@ -227,15 +274,17 @@ export default function BloodBankView() {
 
           <button
             onClick={handleDispatchRequisition}
-            className="w-full py-3.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-2xl shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
+            disabled={isDispatching}
+            className="w-full py-3.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-bold text-xs rounded-2xl shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
           >
-            <Send className="w-4 h-4" /> Issue Requisition & Dispatch to Lab Queue
+            <Send className="w-4 h-4" />
+            {isDispatching ? "Dispatching to Neon DB Lab Queue..." : "Issue Requisition & Dispatch to Lab Queue"}
           </button>
 
           {requestSuccess && (
             <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 font-bold flex items-center gap-2 animate-bounce">
               <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-              Requisition dispatched! Crossmatch token logged in Pathology Lab.
+              Requisition dispatched! Crossmatch order saved to Neon DB & Pathology Lab.
             </div>
           )}
         </div>
