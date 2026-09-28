@@ -29,66 +29,113 @@ import {
 } from "lucide-react";
 import { useHospital } from "@/context/HospitalContext";
 import type { LabItem, AppointmentItem } from "@/context/HospitalContext";
-
 // ==========================================
-// 1. ADVANCED APPOINTMENTS VIEW
+// 1. ADVANCED APPOINTMENTS VIEW (100% NEON DB LIVE SYNC)
 // ==========================================
 export function AppointmentsView({ onNewIntake }: { onNewIntake?: () => void }) {
-  const { appointments } = useHospital();
+  const { appointments, patients, bookAppointment, updateAppointmentStatus } = useHospital() as any;
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [doctorFilter, setDoctorFilter] = useState("All");
-  const [localAppointments, setLocalAppointments] = useState<AppointmentItem[]>(appointments);
 
-  React.useEffect(() => {
-    setLocalAppointments(appointments);
-  }, [appointments]);
+  // Booking Modal State
+  const [isBookModalOpen, setIsBookModalOpen] = useState(false);
+  const [selectedPatient, setSelectedPatient] = useState("");
+  const [selectedDoctor, setSelectedDoctor] = useState("Dr. Anjali Rao (Chief Pathologist)");
+  const [selectedSlot, setSelectedSlot] = useState("10:30 AM");
+  const [consultType, setConsultType] = useState("OPD Consultation");
+  const [isBooking, setIsBooking] = useState(false);
 
-  const handleStatusChange = (id: string, newStatus: string) => {
-    setLocalAppointments((prev) =>
-      prev.map((apt) => (apt.id === id ? { ...apt, status: newStatus } : apt))
-    );
+  // Status Lifecycle Update
+  const handleStatusChange = async (id: string, newStatus: string) => {
+    if (updateAppointmentStatus) {
+      await updateAppointmentStatus(id, newStatus);
+    }
   };
 
-  const filteredAppointments = localAppointments.filter((apt) => {
+  // Submit New Booking
+  const handleCreateAppointment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedPatient || isBooking) return;
+
+    setIsBooking(true);
+    try {
+      if (bookAppointment) {
+        await bookAppointment({
+          patient: selectedPatient,
+          doctor: selectedDoctor,
+          time: selectedSlot,
+          type: consultType,
+        });
+      } else {
+        await fetch("/api/hospital-state", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            type: "BOOK_APPOINTMENT",
+            payload: {
+              patient: selectedPatient,
+              doctor: selectedDoctor,
+              time: selectedSlot,
+              type: consultType,
+            },
+          }),
+        });
+      }
+
+      setIsBookModalOpen(false);
+      setSelectedPatient("");
+    } catch (err: any) {
+      alert("Booking failed: " + err.message);
+    } finally {
+      setIsBooking(false);
+    }
+  };
+
+  const filteredAppointments = (appointments || []).filter((apt: any) => {
+    const q = searchQuery.toLowerCase();
     const matchesSearch =
-      apt.patient.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      apt.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      apt.type.toLowerCase().includes(searchQuery.toLowerCase());
+      (apt.patient && apt.patient.toLowerCase().includes(q)) ||
+      (apt.id && apt.id.toLowerCase().includes(q)) ||
+      (apt.type && apt.type.toLowerCase().includes(q));
     const matchesStatus = statusFilter === "All" || apt.status === statusFilter;
     const matchesDoctor = doctorFilter === "All" || apt.doctor === doctorFilter;
     return matchesSearch && matchesStatus && matchesDoctor;
   });
 
-  const totalCount = localAppointments.length;
-  const confirmedCount = localAppointments.filter((a) => a.status === "Confirmed").length;
-  const inProgressCount = localAppointments.filter((a) => a.status === "In Progress").length;
-  const completedCount = localAppointments.filter((a) => a.status === "Completed").length;
+  const totalCount = (appointments || []).length;
+  const confirmedCount = (appointments || []).filter((a: any) => a.status === "Confirmed" || a.status === "Scheduled").length;
+  const inProgressCount = (appointments || []).filter((a: any) => a.status === "In Progress").length;
+  const completedCount = (appointments || []).filter((a: any) => a.status === "Completed").length;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 font-sans">
+      {/* Top Banner */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-3xl border border-gray-200/80 shadow-xs">
         <div>
           <div className="flex items-center gap-2">
-            <h2 className="text-lg font-bold text-gray-800">Hospital Appointment & OPD Queue</h2>
-            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800">
-              Live Token Flow
+            <h2 className="text-lg font-black text-gray-900">Hospital Appointment & OPD Scheduler</h2>
+            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 uppercase tracking-wider">
+              Neon DB Synced
             </span>
           </div>
           <p className="text-xs text-gray-500 mt-0.5">
-            Real-time consult encounters, specialty schedules, and bedside telemetry links
+            Real-time doctor consult encounters, specialty slot bookings, and clinical triage scheduling
           </p>
         </div>
 
-        <button
-          onClick={onNewIntake}
-          className="px-4 py-2.5 bg-[#072a22] hover:bg-[#0c382e] text-white text-xs font-bold rounded-2xl transition flex items-center gap-2 cursor-pointer shadow-xs self-start sm:self-auto"
-        >
-          <Plus className="w-4 h-4 text-emerald-400" />
-          <span>Book Walk-in / OPD Intake</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setIsBookModalOpen(true)}
+            className="px-4 py-2.5 bg-[#072a22] hover:bg-[#0c382e] text-white text-xs font-bold rounded-2xl transition flex items-center gap-2 cursor-pointer shadow-xs"
+          >
+            <Plus className="w-4 h-4 text-emerald-400" />
+            <span>Book Patient Appointment</span>
+          </button>
+        </div>
       </div>
 
+      {/* KPI Counters */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <div className="bg-white p-4 rounded-2xl border border-gray-200/80 shadow-xs">
           <span className="text-[10px] uppercase font-bold text-gray-400">Total Booked</span>
@@ -112,6 +159,7 @@ export function AppointmentsView({ onNewIntake }: { onNewIntake?: () => void }) 
         </div>
       </div>
 
+      {/* Filter and Search Bar */}
       <div className="bg-white p-4 rounded-2xl border border-gray-200/80 shadow-xs flex flex-col sm:flex-row gap-3 items-center justify-between">
         <div className="relative w-full sm:w-80">
           <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -142,93 +190,209 @@ export function AppointmentsView({ onNewIntake }: { onNewIntake?: () => void }) 
             className="text-xs font-semibold bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 focus:outline-none"
           >
             <option value="All">All Clinicians</option>
-            <option value="Dr. Morgan">Dr. Morgan</option>
             <option value="Dr. Anjali Rao">Dr. Anjali Rao</option>
             <option value="Dr. Verma">Dr. Verma</option>
+            <option value="Dr. Morgan">Dr. Morgan</option>
           </select>
         </div>
       </div>
 
+      {/* Appointment Cards Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filteredAppointments.map((apt) => {
-          const isDone = apt.status === "Completed";
-          const isInProg = apt.status === "In Progress";
+        {filteredAppointments.length === 0 ? (
+          <div className="col-span-full py-12 text-center bg-white rounded-3xl border border-gray-200">
+            <CalendarDays className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+            <p className="text-sm font-bold text-gray-700">No scheduled appointments</p>
+            <p className="text-xs text-gray-400 mt-1">Book an appointment for an active patient to schedule consultations.</p>
+          </div>
+        ) : (
+          filteredAppointments.map((apt: any) => {
+            const isDone = apt.status === "Completed";
+            const isInProg = apt.status === "In Progress";
 
-          return (
-            <div
-              key={apt.id}
-              className={`p-5 rounded-3xl border transition flex flex-col justify-between ${
-                isDone
-                  ? "bg-gray-50/70 border-gray-200"
-                  : isInProg
-                  ? "bg-emerald-50/40 border-emerald-300 ring-1 ring-emerald-400/30 shadow-xs"
-                  : "bg-white border-gray-200/80 hover:border-emerald-400 shadow-xs"
-              }`}
-            >
-              <div>
-                <div className="flex items-center justify-between pb-3 border-b border-gray-100">
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-xl bg-[#072a22] text-emerald-300 flex items-center justify-center font-bold text-xs">
-                      {apt.id.split("-")[1]}
+            return (
+              <div
+                key={apt.id}
+                className={`p-5 rounded-3xl border transition flex flex-col justify-between ${
+                  isDone
+                    ? "bg-gray-50/70 border-gray-200"
+                    : isInProg
+                    ? "bg-emerald-50/40 border-emerald-300 ring-1 ring-emerald-400/30 shadow-xs"
+                    : "bg-white border-gray-200/80 hover:border-emerald-400 shadow-xs"
+                }`}
+              >
+                <div>
+                  <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-xl bg-[#072a22] text-emerald-300 flex items-center justify-center font-bold text-xs font-mono">
+                        {apt.id.split("-")[1] || "APT"}
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-bold text-gray-800">{apt.id}</h4>
+                        <p className="text-[10px] text-gray-400">{apt.type}</p>
+                      </div>
                     </div>
-                    <div>
-                      <h4 className="text-xs font-bold text-gray-800">{apt.id}</h4>
-                      <p className="text-[10px] text-gray-400">{apt.type}</p>
-                    </div>
+
+                    <span
+                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                        isDone
+                          ? "bg-gray-200 text-gray-700"
+                          : isInProg
+                          ? "bg-emerald-100 text-emerald-800"
+                          : "bg-amber-100 text-amber-800"
+                      }`}
+                    >
+                      {apt.status}
+                    </span>
                   </div>
 
-                  <span
-                    className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                      isDone
-                        ? "bg-gray-200 text-gray-700"
-                        : isInProg
-                        ? "bg-emerald-100 text-emerald-800"
-                        : "bg-amber-100 text-amber-800"
-                    }`}
-                  >
-                    {apt.status}
-                  </span>
+                  <div className="my-3 space-y-1.5 text-xs">
+                    <div className="flex items-center gap-2">
+                      <User className="w-3.5 h-3.5 text-gray-400" />
+                      <span className="font-bold text-gray-800">{apt.patient}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-gray-500">
+                      <Clock className="w-3.5 h-3.5 text-gray-400" />
+                      <span>Slot: <b className="text-gray-700">{apt.time}</b></span>
+                    </div>
+                    <div className="flex items-center gap-2 text-gray-500">
+                      <Stethoscope className="w-3.5 h-3.5 text-gray-400" />
+                      <span>Consultant: <b className="text-emerald-800">{apt.doctor}</b></span>
+                    </div>
+                  </div>
                 </div>
 
-                <div className="my-3 space-y-1.5 text-xs">
-                  <div className="flex items-center gap-2">
-                    <User className="w-3.5 h-3.5 text-gray-400" />
-                    <span className="font-bold text-gray-800">{apt.patient}</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-gray-500">
-                    <Clock className="w-3.5 h-3.5 text-gray-400" />
-                    <span>Slot: <b className="text-gray-700">{apt.time}</b></span>
-                  </div>
-                  <div className="flex items-center gap-2 text-gray-500">
-                    <Stethoscope className="w-3.5 h-3.5 text-gray-400" />
-                    <span>Consultant: <b className="text-emerald-800">{apt.doctor}</b></span>
-                  </div>
+                <div className="pt-3 border-t border-gray-100 flex items-center justify-between gap-2">
+                  <select
+                    value={apt.status}
+                    onChange={(e) => handleStatusChange(apt.id, e.target.value)}
+                    className="text-[11px] font-bold bg-gray-50 border border-gray-200 rounded-xl px-2 py-1.5 focus:outline-none"
+                  >
+                    <option value="Confirmed">Confirmed</option>
+                    <option value="In Progress">In Progress</option>
+                    <option value="Completed">Completed</option>
+                  </select>
+
+                  <button
+                    onClick={onNewIntake}
+                    className="px-3 py-1.5 bg-[#072a22] hover:bg-[#0c382e] text-white text-[11px] font-bold rounded-xl transition cursor-pointer flex items-center gap-1"
+                  >
+                    <Stethoscope className="w-3 h-3 text-emerald-400" />
+                    <span>Examine</span>
+                  </button>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {/* BOOK APPOINTMENT MODAL (DIRECT NEON DB CONNECTED) */}
+      {isBookModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+          <div className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between border-b pb-3">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-emerald-100 text-emerald-800 rounded-xl">
+                  <CalendarDays className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-gray-900">Schedule Patient Consultation</h3>
+                  <p className="text-[10px] text-gray-400">Stores directly to Neon Cloud Database</p>
+                </div>
+              </div>
+              <button onClick={() => setIsBookModalOpen(false)} className="text-gray-400 hover:text-gray-600 cursor-pointer">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateAppointment} className="space-y-3.5 text-xs">
+              <div>
+                <label className="text-[10px] font-bold text-gray-500 uppercase block mb-1">Select Patient</label>
+                <select
+                  required
+                  value={selectedPatient}
+                  onChange={(e) => setSelectedPatient(e.target.value)}
+                  className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl font-bold text-gray-800 focus:outline-none focus:border-emerald-600"
+                >
+                  <option value="">-- Choose Admitted Patient --</option>
+                  {(patients || []).map((p: any) => (
+                    <option key={p.id} value={p.name}>
+                      {p.name} ({p.bedNumber || "OPD Case"})
+                    </option>
+                  ))}
+                </select>
+                {(!patients || patients.length === 0) && (
+                  <p className="text-[10px] text-rose-500 mt-1 font-semibold">
+                    * No registered patients in DB. Please intake a patient first.
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold text-gray-500 uppercase block mb-1">Consulting Physician</label>
+                <select
+                  value={selectedDoctor}
+                  onChange={(e) => setSelectedDoctor(e.target.value)}
+                  className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl font-semibold text-gray-800 focus:outline-none"
+                >
+                  <option value="Dr. Verma (Physician)">Dr. Verma (General Medicine)</option>
+                  <option value="Dr. Anjali Rao (Chief Pathologist)">Dr. Anjali Rao (Pathology & Diagnostics)</option>
+                  <option value="Dr. Morgan (Trauma Lead)">Dr. Morgan (Emergency & Critical Care)</option>
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-bold text-gray-500 uppercase block mb-1">Time Slot</label>
+                  <select
+                    value={selectedSlot}
+                    onChange={(e) => setSelectedSlot(e.target.value)}
+                    className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl font-semibold text-gray-800 focus:outline-none"
+                  >
+                    <option value="09:30 AM">09:30 AM</option>
+                    <option value="10:30 AM">10:30 AM</option>
+                    <option value="11:45 AM">11:45 AM</option>
+                    <option value="02:15 PM">02:15 PM</option>
+                    <option value="04:00 PM">04:00 PM</option>
+                    <option value="05:30 PM">05:30 PM</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-gray-500 uppercase block mb-1">Encounter Type</label>
+                  <select
+                    value={consultType}
+                    onChange={(e) => setConsultType(e.target.value)}
+                    className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl font-semibold text-gray-800 focus:outline-none"
+                  >
+                    <option value="OPD Consultation">OPD Consultation</option>
+                    <option value="Specialist Follow-up">Specialist Follow-up</option>
+                    <option value="Pre-Operative Clearance">Pre-Operative Clearance</option>
+                    <option value="Emergency Review">Emergency Review</option>
+                  </select>
                 </div>
               </div>
 
-              <div className="pt-3 border-t border-gray-100 flex items-center justify-between gap-2">
-                <select
-                  value={apt.status}
-                  onChange={(e) => handleStatusChange(apt.id, e.target.value)}
-                  className="text-[11px] font-bold bg-gray-50 border border-gray-200 rounded-xl px-2 py-1.5 focus:outline-none"
-                >
-                  <option value="Confirmed">Confirmed</option>
-                  <option value="In Progress">In Progress</option>
-                  <option value="Completed">Completed</option>
-                </select>
-
+              <div className="flex gap-2 pt-2">
                 <button
-                  onClick={onNewIntake}
-                  className="px-3 py-1.5 bg-[#072a22] hover:bg-[#0c382e] text-white text-[11px] font-bold rounded-xl transition cursor-pointer flex items-center gap-1"
+                  type="button"
+                  onClick={() => setIsBookModalOpen(false)}
+                  className="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl cursor-pointer"
                 >
-                  <Stethoscope className="w-3 h-3 text-emerald-400" />
-                  <span>Examine</span>
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isBooking || !selectedPatient}
+                  className="flex-1 py-2.5 bg-[#072a22] hover:bg-[#0c382e] disabled:opacity-50 text-white font-bold rounded-xl shadow-md cursor-pointer transition"
+                >
+                  {isBooking ? "Saving to Neon DB..." : "Confirm Booking"}
                 </button>
               </div>
-            </div>
-          );
-        })}
-      </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
