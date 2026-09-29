@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
   ShieldCheck,
   CheckCircle2,
@@ -14,10 +14,30 @@ import {
 } from "lucide-react";
 import { useHospital } from "@/context/HospitalContext";
 
-export default function AbdmModal({ onClose }: { onClose: () => void }) {
+export default function AbdmModal({ onClose }: { onClose?: () => void }) {
   const { patients, labQueue } = useHospital() as any;
   const [activeMilestone, setActiveMilestone] = useState<"M1" | "M2" | "M3">("M3");
   const [viewingFhirJson, setViewingFhirJson] = useState(false);
+  const [isVisible, setIsVisible] = useState(true);
+
+  // Close handler jo modal ko 100% guarantee band karega
+  const handleDismiss = () => {
+    setIsVisible(false);
+    if (typeof onClose === "function") {
+      onClose();
+    }
+  };
+
+  // Escape key dabane par modal band karne ka event listener
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        handleDismiss();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   // 1. NEON DB KE REAL DATA SE DYNAMIC AUDIT TRAIL LOGS GENERATE KARNA
   const liveAuditTrail = useMemo(() => {
@@ -131,18 +151,32 @@ export default function AbdmModal({ onClose }: { onClose: () => void }) {
     downloadAnchor.remove();
   };
 
+  // Agar user ne close dabaya hai toh DOM se turant hata dein
+  if (!isVisible) return null;
+
   return (
     <div 
-      onClick={onClose}
-      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 overflow-y-auto"
+      onClick={handleDismiss}
+      className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 overflow-y-auto cursor-pointer"
+      style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0 }}
     >
       <div 
         onClick={(e) => e.stopPropagation()}
-        className="bg-white w-full max-w-4xl rounded-3xl p-6 shadow-2xl border border-gray-100 my-6 relative font-sans space-y-5 animate-in fade-in zoom-in-95"
+        className="bg-white w-full max-w-4xl rounded-3xl p-6 shadow-2xl border border-gray-100 my-6 relative font-sans space-y-5 animate-in fade-in zoom-in-95 cursor-default"
       >
         
+        {/* Floating Top-Right Close Button */}
+        <button 
+          type="button"
+          onClick={handleDismiss}
+          aria-label="Close Modal"
+          className="absolute top-5 right-5 p-2 bg-gray-100 hover:bg-rose-100 hover:text-rose-700 text-gray-600 rounded-full cursor-pointer transition shadow-xs z-[100000]"
+        >
+          <X className="w-5 h-5 stroke-[2.5]" />
+        </button>
+
         {/* Header */}
-        <div className="flex items-center justify-between border-b pb-4 border-gray-100">
+        <div className="flex items-center justify-between border-b pb-4 border-gray-100 pr-12">
           <div className="flex items-center gap-3">
             <div className="p-2.5 bg-emerald-600 text-white rounded-2xl shadow-xs">
               <ShieldCheck className="w-6 h-6" />
@@ -159,17 +193,6 @@ export default function AbdmModal({ onClose }: { onClose: () => void }) {
               </p>
             </div>
           </div>
-          <button 
-            type="button"
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              onClose();
-            }}
-            className="p-2 text-gray-400 hover:text-gray-900 hover:bg-gray-100 rounded-full cursor-pointer transition"
-          >
-            <X className="w-6 h-6" />
-          </button>
         </div>
 
         {/* Milestone Selector Cards */}
@@ -177,7 +200,7 @@ export default function AbdmModal({ onClose }: { onClose: () => void }) {
           <div
             onClick={() => setActiveMilestone("M1")}
             className={`p-4 rounded-2xl border cursor-pointer transition ${
-              activeMilestone === "M1" ? "border-emerald-500 bg-emerald-50/50 shadow-xs" : "border-gray-200 bg-white"
+              activeMilestone === "M1" ? "border-emerald-500 bg-emerald-50/50 shadow-xs ring-1 ring-emerald-400/40" : "border-gray-200 bg-white hover:border-gray-300"
             }`}
           >
             <div className="flex items-center justify-between text-xs font-bold text-gray-700 mb-1">
@@ -193,7 +216,7 @@ export default function AbdmModal({ onClose }: { onClose: () => void }) {
           <div
             onClick={() => setActiveMilestone("M2")}
             className={`p-4 rounded-2xl border cursor-pointer transition ${
-              activeMilestone === "M2" ? "border-emerald-500 bg-emerald-50/50 shadow-xs" : "border-gray-200 bg-white"
+              activeMilestone === "M2" ? "border-emerald-500 bg-emerald-50/50 shadow-xs ring-1 ring-emerald-400/40" : "border-gray-200 bg-white hover:border-gray-300"
             }`}
           >
             <div className="flex items-center justify-between text-xs font-bold text-gray-700 mb-1">
@@ -209,7 +232,7 @@ export default function AbdmModal({ onClose }: { onClose: () => void }) {
           <div
             onClick={() => setActiveMilestone("M3")}
             className={`p-4 rounded-2xl border cursor-pointer transition ${
-              activeMilestone === "M3" ? "border-emerald-500 bg-emerald-50/50 shadow-xs" : "border-gray-200 bg-white"
+              activeMilestone === "M3" ? "border-emerald-500 bg-emerald-50/50 shadow-xs ring-1 ring-emerald-400/40" : "border-gray-200 bg-white hover:border-gray-300"
             }`}
           >
             <div className="flex items-center justify-between text-xs font-bold text-gray-700 mb-1">
@@ -230,6 +253,7 @@ export default function AbdmModal({ onClose }: { onClose: () => void }) {
               TARGET PROTOCOL: MILESTONE {activeMilestone} (CONSENT ARTIFACT ENGINE)
             </span>
             <button
+              type="button"
               onClick={() => setViewingFhirJson(!viewingFhirJson)}
               className="text-emerald-700 hover:text-emerald-800 font-bold flex items-center gap-1 cursor-pointer"
             >
@@ -304,6 +328,7 @@ export default function AbdmModal({ onClose }: { onClose: () => void }) {
           </p>
 
           <button
+            type="button"
             onClick={handleExportTrail}
             className="px-4 py-2 bg-[#072a22] hover:bg-[#0c382e] text-white text-xs font-bold rounded-xl transition flex items-center justify-center gap-2 cursor-pointer shadow-xs"
           >
