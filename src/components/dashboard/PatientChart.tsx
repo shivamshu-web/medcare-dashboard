@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   AreaChart,
   Area,
@@ -10,9 +10,11 @@ import {
   ResponsiveContainer,
   CartesianGrid,
 } from "recharts";
-import { TrendingUp, Users, Calendar, Activity } from "lucide-react";
+import { Activity } from "lucide-react";
+import { useHospital } from "@/context/HospitalContext";
 
 export default function PatientChart() {
+  const { patients } = useHospital() as any;
   const [timeframe, setTimeframe] = useState<"weekly" | "monthly" | "yearly">("weekly");
   const [mounted, setMounted] = useState(false);
 
@@ -20,19 +22,28 @@ export default function PatientChart() {
     setMounted(true);
   }, []);
 
-  // 1. Weekly Dataset (Monday - Sunday)
-  const weeklyData = [
+  // Neon DB se live counts calculate karna
+  const liveTotalPatients = (patients || []).length;
+  const liveEmergency = (patients || []).filter((p: any) =>
+    p?.status?.toLowerCase().includes("critical") ||
+    p?.status?.toLowerCase().includes("resus") ||
+    p?.bedNumber?.includes("TRAUMA")
+  ).length;
+  const liveOpd = Math.max(0, liveTotalPatients - liveEmergency);
+
+  // 1. Weekly Dataset - Live Saturday/Today values Neon DB se linked
+  const weeklyData = useMemo(() => [
     { name: "Mon", opd: 48, teleConsult: 22, emergency: 12 },
     { name: "Tue", opd: 55, teleConsult: 28, emergency: 8 },
     { name: "Wed", opd: 68, teleConsult: 38, emergency: 15 },
     { name: "Thu", opd: 62, teleConsult: 34, emergency: 10 },
     { name: "Fri", opd: 76, teleConsult: 44, emergency: 18 },
-    { name: "Sat", opd: 84, teleConsult: 52, emergency: 22 },
+    { name: "Sat", opd: 84 + liveOpd, teleConsult: 52, emergency: 22 + liveEmergency },
     { name: "Sun", opd: 40, teleConsult: 26, emergency: 14 },
-  ];
+  ], [liveOpd, liveEmergency]);
 
   // 2. Monthly Dataset (Jan - Sep)
-  const monthlyData = [
+  const monthlyData = useMemo(() => [
     { name: "Jan", opd: 340, teleConsult: 180, emergency: 65 },
     { name: "Feb", opd: 410, teleConsult: 210, emergency: 72 },
     { name: "Mar", opd: 490, teleConsult: 280, emergency: 85 },
@@ -41,17 +52,17 @@ export default function PatientChart() {
     { name: "Jun", opd: 710, teleConsult: 430, emergency: 125 },
     { name: "Jul", opd: 760, teleConsult: 470, emergency: 135 },
     { name: "Aug", opd: 830, teleConsult: 520, emergency: 145 },
-    { name: "Sep", opd: 890, teleConsult: 580, emergency: 160 },
-  ];
+    { name: "Sep", opd: 890 + liveOpd, teleConsult: 580, emergency: 160 + liveEmergency },
+  ], [liveOpd, liveEmergency]);
 
   // 3. Yearly Dataset (2022 - 2026)
-  const yearlyData = [
+  const yearlyData = useMemo(() => [
     { name: "2022", opd: 3600, teleConsult: 1400, emergency: 650 },
     { name: "2023", opd: 5400, teleConsult: 2600, emergency: 920 },
     { name: "2024", opd: 7600, teleConsult: 4300, emergency: 1200 },
     { name: "2025", opd: 10200, teleConsult: 6600, emergency: 1480 },
-    { name: "2026 (YTD)", opd: 12800, teleConsult: 8400, emergency: 1920 },
-  ];
+    { name: "2026 (YTD)", opd: 12800 + liveOpd, teleConsult: 8400, emergency: 1920 + liveEmergency },
+  ], [liveOpd, liveEmergency]);
 
   const currentData =
     timeframe === "weekly"

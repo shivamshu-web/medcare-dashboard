@@ -9,10 +9,10 @@ export default function LiveHospitalMetrics({
 }: {
   onNavigateToWards?: () => void;
 }) {
-  const { beds, patients } = useHospital() as any;
+  const { beds, patients, activeEmergency } = useHospital() as any;
   const [tick, setTick] = useState(0);
 
-  // Listen to storage events so when WardsView admits/discharges, dashboard updates immediately
+  // Storage aur window events sync taaki kisi bhi module se bed assign hone par live update ho
   useEffect(() => {
     const handler = () => setTick((t) => t + 1);
     window.addEventListener("storage", handler);
@@ -23,41 +23,57 @@ export default function LiveHospitalMetrics({
     };
   }, []);
 
-  // DIRECT CONNECTION TO WARDSBEDS
+  // DIRECT DYNAMIC SYNCHRONIZATION WITH NEON DB & ADMISSIONS
   const stats = useMemo(() => {
-    let rawWards: any[] = [];
-    if (typeof window !== "undefined") {
-      try {
-        const storedWards = localStorage.getItem("medcare_wards_state") || localStorage.getItem("medcare_beds");
-        if (storedWards) {
-          rawWards = JSON.parse(storedWards);
-        }
-      } catch (e) {}
-    }
+    const totalConfiguredBeds = Array.isArray(beds) && beds.length > 0 ? beds.length : 22;
 
-    // If localStorage has wards, prioritize it (exact match with WardsView)
-    if (Array.isArray(rawWards) && rawWards.length > 0) {
-      const total = rawWards.length;
-      const occupied = rawWards.filter((b: any) => b.isOccupied || b.status === "Occupied" || b.occupied).length;
-      const critical = rawWards.filter((b: any) => (b.isOccupied || b.status === "Occupied") && (b.isCritical || String(b.diagnosis || b.patient || "").toLowerCase().includes("red"))).length;
-      const available = Math.max(0, total - occupied);
-      const percentage = Math.round((occupied / total) * 100);
-      return { total, occupied, available, critical, percentage };
-    }
+    // 1. Neon DB Patients jo currently kisi bed par admitted hain
+    const activeAdmittedPatients = (patients || []).filter((p: any) => {
+      const status = String(p?.status || "").toLowerCase();
+      const bed = String(p?.bedNumber || "").toUpperCase();
+      return (
+        bed !== "" &&
+        bed !== "OPD" &&
+        bed !== "NONE" &&
+        !status.includes("discharged")
+      );
+    });
 
-    // Fallback directly to context beds
-    if (Array.isArray(beds) && beds.length > 0) {
-      const total = beds.length;
-      const occupied = beds.filter((b: any) => b.status === "Occupied" || b.occupied).length;
-      const critical = beds.filter((b: any) => b.isCritical || (b.status === "Occupied" && b.isCodeRed)).length;
-      const available = Math.max(0, total - occupied);
-      const percentage = Math.round((occupied / total) * 100);
-      return { total, occupied, available, critical, percentage };
-    }
+    // 2. Code Red / Critical / STAT ER cases count
+    const criticalCases = (patients || []).filter((p: any) => {
+      const s = String(p?.status || "").toLowerCase();
+      const b = String(p?.bedNumber || "").toUpperCase();
+      const c = String(p?.caseNotes || p?.symptoms || "").toLowerCase();
+      return (
+        s.includes("critical") ||
+        s.includes("resus") ||
+        s.includes("code red") ||
+        b.includes("TRAUMA") ||
+        b.includes("ER") ||
+        c.includes("stemie") ||
+        c.includes("arrest")
+      );
+    }).length + (activeEmergency ? 1 : 0);
 
-    // Default 8-bed ward (2 Occupied, 6 Available as seen in your WardsView)
-    return { total: 8, occupied: 2, available: 6, critical: 1, percentage: 25 };
-  }, [beds, patients, tick]);
+    // 3. Occupied Beds count (Beds array OR Admitted Patients)
+    const dbOccupiedBeds = Array.isArray(beds)
+      ? beds.filter((b: any) => b?.status === "Occupied" || b?.occupied).length
+      : 0;
+
+    const finalOccupied = Math.max(activeAdmittedPatients.length, dbOccupiedBeds);
+    const finalAvailable = Math.max(0, totalConfiguredBeds - finalOccupied);
+    const finalPercentage = totalConfiguredBeds > 0
+      ? Math.min(100, Math.round((finalOccupied / totalConfiguredBeds) * 100))
+      : 0;
+
+    return {
+      total: totalConfiguredBeds,
+      occupied: finalOccupied,
+      available: finalAvailable,
+      critical: criticalCases,
+      percentage: finalPercentage,
+    };
+  }, [beds, patients, activeEmergency, tick]);
 
   return (
     <div className="bg-white p-5 rounded-3xl border border-gray-200/90 shadow-xs flex flex-col justify-between h-full font-sans">
@@ -88,7 +104,7 @@ export default function LiveHospitalMetrics({
           )}
         </div>
 
-        {/* Progress Bar */}
+        {/* Dynamic Progress Bar */}
         <div className="mt-4 space-y-1.5">
           <div className="flex items-center justify-between text-xs">
             <span className="font-bold text-gray-700">Total Ward Occupancy</span>
@@ -99,14 +115,18 @@ export default function LiveHospitalMetrics({
           <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden flex">
             <div
               className={`h-full transition-all duration-500 rounded-full ${
-                stats.percentage > 75 ? "bg-rose-500" : stats.percentage > 40 ? "bg-amber-500" : "bg-emerald-600"
+                stats.percentage > 75
+                  ? "bg-rose-500"
+                  : stats.percentage > 40
+                  ? "bg-amber-500"
+                  : "bg-emerald-600"
               }`}
-              style={{ width: `${Math.max(8, stats.percentage)}%` }}
+              style={{ width: `${Math.max(stats.percentage > 0 ? 6 : 0, stats.percentage)}%` }}
             />
           </div>
         </div>
 
-        {/* 3 Metrics in Single Row */}
+        {/* 3 Metrics: Available, Occupied, Code Red */}
         <div className="grid grid-cols-3 gap-2 mt-4 text-center">
           <div className="p-2.5 bg-emerald-50/70 border border-emerald-200/80 rounded-2xl">
             <span className="text-[10px] font-extrabold text-emerald-800 uppercase tracking-tight block">
@@ -114,12 +134,14 @@ export default function LiveHospitalMetrics({
             </span>
             <b className="text-base font-black text-emerald-700">{stats.available} Ready</b>
           </div>
-          <div className="p-2.5 bg-gray-50 border border-gray-200 rounded-2xl">
-            <span className="text-[10px] font-extrabold text-gray-600 uppercase tracking-tight block">
+
+          <div className="p-2.5 bg-blue-50/70 border border-blue-200/80 rounded-2xl">
+            <span className="text-[10px] font-extrabold text-blue-800 uppercase tracking-tight block">
               Occupied
             </span>
-            <b className="text-base font-black text-gray-800">{stats.occupied} In-Use</b>
+            <b className="text-base font-black text-blue-700">{stats.occupied} In-Use</b>
           </div>
+
           <div className="p-2.5 bg-rose-50/70 border border-rose-200/80 rounded-2xl">
             <span className="text-[10px] font-extrabold text-rose-800 uppercase tracking-tight block">
               Code Red
@@ -131,7 +153,7 @@ export default function LiveHospitalMetrics({
 
       {/* Footer */}
       <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between text-[11px] text-gray-400">
-        <span className="flex items-center gap-1.5">
+        <span className="flex items-center gap-1.5 text-emerald-700 font-bold">
           <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
           Central Matrix Active
         </span>
