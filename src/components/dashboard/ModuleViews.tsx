@@ -2045,3 +2045,125 @@ export function FinanceBillingView() {
     </div>
   );
 }
+export function DashboardView({ searchQuery = "" }: { searchQuery?: string }) {
+  // HospitalContext se live dynamic states pull karein
+  const { patients, beds, bloodStock, labQueue } = useHospital() as any;
+
+  // 1. LIVE COUNTS DIRECT FROM NEON DB
+  const totalPatients = (patients || []).length;
+  const criticalPatients = (patients || []).filter((p: any) => 
+    p.status?.toLowerCase().includes("critical") || 
+    p.status?.toLowerCase().includes("resus")
+  ).length;
+
+  const totalBeds = (beds || []).length || 20;
+  const occupiedBeds = (beds || []).filter((b: any) => b.status === "Occupied").length;
+  const totalLabsInQueue = (labQueue || []).filter((l: any) => l.status === "In-Queue").length;
+  const totalBloodUnits = (bloodStock || []).reduce((acc: number, b: any) => acc + (b.unitsAvailable || 0), 0);
+
+  // 2. WORKING PATIENT SEARCH FILTER
+  const filteredPatients = (patients || []).filter((p: any) => {
+    const q = (searchQuery || "").toLowerCase().trim();
+    if (!q) return true;
+    return (
+      (p.name && p.name.toLowerCase().includes(q)) ||
+      (p.contact && p.contact.toLowerCase().includes(q)) ||
+      (p.bedNumber && p.bedNumber.toLowerCase().includes(q)) ||
+      (p.bloodGroup && p.bloodGroup.toLowerCase().includes(q))
+    );
+  });
+
+  return (
+    <div className="space-y-6">
+      {/* 4 LIVE KPI COUNTERS */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        {/* Total Admissions */}
+        <div className="bg-white p-4 rounded-2xl border border-gray-200/80 shadow-xs">
+          <span className="text-[10px] uppercase font-bold text-gray-400">Total Admissions</span>
+          <h3 className="text-2xl font-black text-gray-900 mt-1">{totalPatients}</h3>
+          <p className="text-[10px] text-gray-500 mt-0.5">
+            {criticalPatients > 0 ? (
+              <span className="text-rose-600 font-bold">{criticalPatients} Critical ER</span>
+            ) : (
+              "All Vitals Stable"
+            )}
+          </p>
+        </div>
+
+        {/* Live Bed Occupancy */}
+        <div className="bg-white p-4 rounded-2xl border border-gray-200/80 shadow-xs">
+          <span className="text-[10px] uppercase font-bold text-gray-400">Bed Occupancy</span>
+          <h3 className="text-2xl font-black text-gray-900 mt-1">{occupiedBeds} / {totalBeds}</h3>
+          <p className="text-[10px] text-gray-500 mt-0.5">{totalBeds - occupiedBeds} Beds Available</p>
+        </div>
+
+        {/* Pathology Lab Queue */}
+        <div className="bg-white p-4 rounded-2xl border border-gray-200/80 shadow-xs">
+          <span className="text-[10px] uppercase font-bold text-gray-400">Active Lab Orders</span>
+          <h3 className="text-2xl font-black text-amber-700 mt-1">{totalLabsInQueue}</h3>
+          <p className="text-[10px] text-amber-600 mt-0.5">In Pathology Analyzer</p>
+        </div>
+
+        {/* Blood Bank Reserves */}
+        <div className="bg-white p-4 rounded-2xl border border-gray-200/80 shadow-xs">
+          <span className="text-[10px] uppercase font-bold text-gray-400">Blood Reserves</span>
+          <h3 className="text-2xl font-black text-rose-700 mt-1">{totalBloodUnits} Units</h3>
+          <p className="text-[10px] text-gray-500 mt-0.5">Tested in Cold Storage</p>
+        </div>
+      </div>
+
+      {/* ADMITTED PATIENT ROSTER (SEARCH CONNECTED) */}
+      <div className="bg-white rounded-3xl border border-gray-200/80 shadow-xs p-5 space-y-4">
+        <div>
+          <h3 className="text-sm font-bold text-gray-900">Admitted Inpatient Roster</h3>
+          <p className="text-xs text-gray-400 mt-0.5">
+            {searchQuery ? `Searching for "${searchQuery}" (${filteredPatients.length} found)` : "Real-time records from Neon DB"}
+          </p>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead>
+              <tr className="border-b border-gray-100 text-gray-400 font-bold uppercase text-[10px]">
+                <th className="pb-3">Patient Name</th>
+                <th className="pb-3">Age / Gender</th>
+                <th className="pb-3">Bed Allocation</th>
+                <th className="pb-3">Blood Group</th>
+                <th className="pb-3">Clinical Condition</th>
+                <th className="pb-3">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {filteredPatients.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="py-8 text-center text-gray-400">
+                    No matching patients found.
+                  </td>
+                </tr>
+              ) : (
+                filteredPatients.map((p: any) => (
+                  <tr key={p.id} className="hover:bg-gray-50/70 transition">
+                    <td className="py-3 font-bold text-gray-900">{p.name}</td>
+                    <td className="py-3 text-gray-500">{p.age}Y / {p.gender}</td>
+                    <td className="py-3 font-mono font-bold text-gray-700">{p.bedNumber || "OPD"}</td>
+                    <td className="py-3">
+                      <span className="px-2 py-0.5 bg-rose-50 text-rose-700 rounded-md font-bold text-[10px]">
+                        {p.bloodGroup || "O+"}
+                      </span>
+                    </td>
+                    <td className="py-3 text-gray-600 max-w-xs truncate">{p.symptoms || p.caseNotes || "Stable"}</td>
+                    <td className="py-3">
+                      <span className="px-2.5 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full font-bold text-[10px]">
+                        {p.status || "Admitted"}
+                      </span>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}

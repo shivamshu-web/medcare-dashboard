@@ -50,6 +50,7 @@ import {
   Volume2,
   History,
   Sparkles,
+  Search,
 } from "lucide-react";
 
 interface ScheduleAppointment extends AppointmentItem {
@@ -69,6 +70,9 @@ function Dashboard() {
   const [selectedPatient, setSelectedPatient] = useState<PatientData | null>(null);
   const [selectedAppointment, setSelectedAppointment] = useState<AppointmentItem | null>(null);
 
+  // Search Query State for Global Search
+  const [searchQuery, setSearchQuery] = useState("");
+
   const [selectedDayNum, setSelectedDayNum] = useState<number>(12);
   const [scheduleFilter, setScheduleFilter] = useState<"all" | "completed" | "upcoming">("all");
   const [tokenAnnounced, setTokenAnnounced] = useState<string | null>(null);
@@ -82,6 +86,7 @@ function Dashboard() {
     beds,
     revenue,
     bloodStock,
+    labQueue,
     loading,
     activeEmergency,
     dismissEmergency,
@@ -110,6 +115,27 @@ function Dashboard() {
     setSelectedPatient(patient);
     setIsProfileModalOpen(true);
   };
+  // Filtered Patients for Global Search (Safe Type Conversion)
+  const filteredPatients = useMemo(() => {
+    const q = (searchQuery || "").toLowerCase().trim();
+    if (!q) return [];
+    
+    return (patients || []).filter((p: any) => {
+      const name = String(p?.name || "").toLowerCase();
+      const contact = String(p?.contact || "").toLowerCase();
+      const bedNumber = String(p?.bedNumber || "").toLowerCase();
+      const bloodGroup = String(p?.bloodGroup || "").toLowerCase();
+      const abhaId = String(p?.abhaId || "").toLowerCase();
+
+      return (
+        name.includes(q) ||
+        contact.includes(q) ||
+        bedNumber.includes(q) ||
+        bloodGroup.includes(q) ||
+        abhaId.includes(q)
+      );
+    });
+  }, [patients, searchQuery]);
 
   const calendarDays = [
     { day: "Mon", dateNum: 7, isPast: true },
@@ -173,6 +199,8 @@ function Dashboard() {
 
       <div className="flex-1 flex flex-col h-full overflow-y-auto">
         <Header
+          searchQuery={searchQuery}
+          onSearchChange={(q) => setSearchQuery(q)}
           onAddPatient={() => setIsCaseModalOpen(true)}
           onOpenEmergency={() => setIsEmergencyModalOpen(true)}
           currentRole={currentRole}
@@ -213,6 +241,48 @@ function Dashboard() {
         )}
 
         <main className="p-8 space-y-6 max-w-7xl mx-auto w-full">
+          {/* SEARCH RESULTS DROPDOWN / BANNER */}
+          {searchQuery.trim() !== "" && (
+            <div className="bg-white p-5 rounded-3xl border border-emerald-300 shadow-md animate-in fade-in space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-xs font-bold text-gray-800">
+                  <Search className="w-4 h-4 text-emerald-600" />
+                  <span>Search Results for "{searchQuery}" ({filteredPatients.length} found)</span>
+                </div>
+                <button
+                  onClick={() => setSearchQuery("")}
+                  className="text-xs text-gray-400 hover:text-gray-700 font-bold"
+                >
+                  Clear Search
+                </button>
+              </div>
+
+              {filteredPatients.length === 0 ? (
+                <p className="text-xs text-gray-400 py-2">No matching patient record found in database.</p>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                  {filteredPatients.map((pt: any) => (
+                    <div
+                      key={pt.id}
+                      onClick={() => handleOpenPatient(pt)}
+                      className="p-3 bg-gray-50 hover:bg-emerald-50/70 border border-gray-200 hover:border-emerald-300 rounded-2xl cursor-pointer transition flex justify-between items-center"
+                    >
+                      <div>
+                        <h4 className="text-xs font-bold text-gray-900">{pt.name}</h4>
+                        <p className="text-[10px] text-gray-500">
+                          Bed: {pt.bedNumber || "OPD"} • Contact: {pt.contact || "N/A"}
+                        </p>
+                      </div>
+                      <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-md">
+                        Open Profile →
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {currentRole === "patient" ? (
             <PatientPortalView />
           ) : (
@@ -290,14 +360,9 @@ function Dashboard() {
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+                    {/* Live Appointments Card */}
                     <div
-                      onClick={() => {
-                        if (appointments.length > 0) {
-                          setSelectedAppointment(appointments[0]);
-                        } else {
-                          setActiveTab("appointments");
-                        }
-                      }}
+                      onClick={() => setActiveTab("appointments")}
                       className="bg-gradient-to-br from-[#072a22] to-[#0d3f34] text-white p-5 rounded-3xl shadow-sm flex flex-col justify-between cursor-pointer hover:shadow-lg hover:shadow-emerald-950/20 transition duration-200 group"
                     >
                       <div className="flex items-center justify-between">
@@ -308,17 +373,18 @@ function Dashboard() {
                           <span className="text-xs font-bold text-emerald-100">Appointments</span>
                         </div>
                         <span className="text-[10px] font-bold bg-emerald-400/20 text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-400/30">
-                          Click to View
+                          Live DB
                         </span>
                       </div>
                       <div className="mt-4">
-                        <h3 className="text-2xl font-black">{1250 + appointments.length}</h3>
+                        <h3 className="text-2xl font-black">{appointments.length}</h3>
                         <p className="text-[11px] text-emerald-300 flex items-center gap-1 mt-1 font-medium">
                           <TrendingUp className="w-3 h-3" /> View active patient schedule →
                         </p>
                       </div>
                     </div>
 
+                    {/* Tele-Consult Card */}
                     <div
                       onClick={() => setIsTeleModalOpen(true)}
                       className="bg-white p-5 rounded-3xl shadow-xs border border-gray-200/80 flex flex-col justify-between cursor-pointer hover:border-emerald-500 hover:shadow-md transition duration-200 group relative overflow-hidden"
@@ -347,6 +413,7 @@ function Dashboard() {
                       </div>
                     </div>
 
+                    {/* Blood Reserve Card */}
                     <div
                       onClick={() => setActiveTab("bloodbank")}
                       className="bg-white p-5 rounded-3xl shadow-xs border border-gray-200/80 flex flex-col justify-between cursor-pointer hover:border-rose-400 hover:shadow-md transition group relative overflow-hidden"
@@ -373,6 +440,7 @@ function Dashboard() {
                       </div>
                     </div>
 
+                    {/* Total Patients Admitted (Neon DB Dynamic) */}
                     <div
                       onClick={() => setActiveTab("patients")}
                       className="bg-white p-5 rounded-3xl shadow-xs border border-gray-200/80 flex flex-col justify-between cursor-pointer hover:border-emerald-500 hover:shadow-md transition"
@@ -381,14 +449,14 @@ function Dashboard() {
                         <div className="p-3 bg-emerald-50 rounded-2xl text-emerald-700">
                           <Users className="w-5 h-5" />
                         </div>
-                        <span className="text-xs font-bold text-gray-700">Total Patients</span>
+                        <span className="text-xs font-bold text-gray-700">Live Admitted Patients</span>
                       </div>
                       <div className="mt-4">
                         <h3 className="text-2xl font-black text-gray-800">
-                          {1835 + patients.length}
+                          {patients.length}
                         </h3>
                         <p className="text-[11px] text-emerald-600 flex items-center gap-1 mt-1 font-medium">
-                          <TrendingUp className="w-3 h-3" /> Live DB Connected
+                          <TrendingUp className="w-3 h-3" /> Neon Cloud SQL Connected
                         </p>
                       </div>
                     </div>
@@ -592,9 +660,8 @@ function Dashboard() {
                       </button>
                     </div>
                   </div>
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-                  
 
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
                     <div className="bg-white p-5 rounded-3xl border border-gray-200/70 shadow-xs flex flex-col justify-between">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-bold text-gray-700">Financial Revenue</span>
@@ -624,49 +691,7 @@ function Dashboard() {
                       </div>
                     </div>
 
-                  <LiveHospitalMetrics />
-
-                    <div className="hidden bg-white p-5 rounded-3xl border border-gray-200/70 shadow-xs flex flex-col justify-between">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-gray-700">
-                          Database Records ({patients.length})
-                        </span>
-                        <button
-                          onClick={refreshPatients}
-                          className="text-gray-400 hover:text-emerald-600 transition cursor-pointer"
-                        >
-                          <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
-                        </button>
-                      </div>
-
-                      <div className="space-y-2 my-2 max-h-36 overflow-y-auto">
-                        {patients.length === 0 ? (
-                          <p className="text-xs text-gray-400 py-3 text-center">
-                            No patients saved yet.
-                          </p>
-                        ) : (
-                          patients.map((p) => (
-                            <div
-                              key={p.id}
-                              onClick={() => handleOpenPatient(p)}
-                              className="p-2.5 bg-gray-50 hover:bg-emerald-50/70 rounded-xl flex items-center justify-between cursor-pointer border border-transparent hover:border-emerald-200 transition"
-                            >
-                              <div className="flex items-center gap-2">
-                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                                <div>
-                                  <p className="text-xs font-semibold text-gray-800">{p.name}</p>
-                                  <p className="text-[10px] text-gray-400">ABHA: {p.abhaId}</p>
-                                </div>
-                              </div>
-                              <span className="text-[10px] text-emerald-700 font-bold">View →</span>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                      <p className="text-[10px] text-emerald-700 font-medium">
-                        Synced with SQLite (Prisma ORM).
-                      </p>
-                    </div>
+                    <LiveHospitalMetrics />
                   </div>
                 </>
               )}
@@ -676,8 +701,8 @@ function Dashboard() {
       </div>
 
       <CaseTakingModal
-      isOpen={isCaseModalOpen}
-      onClose={() => setIsCaseModalOpen(false)}
+        isOpen={isCaseModalOpen}
+        onClose={() => setIsCaseModalOpen(false)}
       />
       <EmergencyModal
         isOpen={isEmergencyModalOpen}
