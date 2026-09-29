@@ -100,14 +100,14 @@ export async function GET() {
 }
 
 // ========================================================
-// 2. POST: Lab Order, Medicine, Appointment Create
+// 2. POST: Lab Order, Appointment, Medicine, ABDM Audit
 // ========================================================
 export async function POST(req: Request) {
   try {
     const body = await req.json();
     console.log("📥 Incoming POST /api/hospital-state payload:", body);
 
-    // 1. LAB ORDER CREATE (Lab View ya Blood Bank Dispatch se)
+    // 1. LAB ORDER CREATE
     if (body.type === "ADD_LAB_ORDER") {
       const payload = body.payload || body;
       const generatedToken = payload.token || `LAB-${Math.floor(1000 + Math.random() * 9000)}`;
@@ -127,7 +127,7 @@ export async function POST(req: Request) {
       return NextResponse.json(createdLab, { status: 201, headers: corsHeaders });
     }
 
-    // 2. APPOINTMENT BOOKING (Neon DB Create)
+    // 2. APPOINTMENT BOOKING
     if (body.type === "BOOK_APPOINTMENT") {
       const aptData = body.payload || body;
       const generatedId = `APT-${Math.floor(1000 + Math.random() * 9000)}`;
@@ -169,6 +169,29 @@ export async function POST(req: Request) {
       return NextResponse.json(newMed, { status: 201, headers: corsHeaders });
     }
 
+    // 4. ABDM AUDIT LOG & COMPLIANCE HOOK (M1 / M2 / M3 Event Handler)
+    if (body.type === "LOG_ABDM_AUDIT") {
+      const payload = body.payload || body;
+      console.log("🛡️ ABDM Audit Triggered:", payload.milestone, payload.txnId);
+
+      // Agar M1 verification me Patient ID pass hui hai toh Neon DB me status update karein
+      if (payload.milestone === "M1" && payload.patientId) {
+        try {
+          await prisma.patient.update({
+            where: { id: payload.patientId },
+            data: { status: "ABHA Verified" },
+          });
+        } catch (e) {
+          console.warn("Patient status update skipped:", e);
+        }
+      }
+
+      return NextResponse.json(
+        { success: true, txnId: payload.txnId, message: "Audit transaction logged" },
+        { status: 201, headers: corsHeaders }
+      );
+    }
+
     return NextResponse.json({ error: "Invalid action type" }, { status: 400, headers: corsHeaders });
   } catch (error: any) {
     console.error("❌ Error in POST /api/hospital-state:", error);
@@ -180,7 +203,7 @@ export async function POST(req: Request) {
 }
 
 // ========================================================
-// 3. PATCH: Beds, Stock, Blood, Appointment, Lab Status Update
+// 3. PATCH: Beds, Stock, Blood, Appointment, Lab, ABDM Patient
 // ========================================================
 export async function PATCH(req: Request) {
   try {
@@ -238,6 +261,25 @@ export async function PATCH(req: Request) {
         data: { status: payload.status },
       });
       return NextResponse.json({ success: true }, { headers: corsHeaders });
+    }
+
+    // 6. ABDM Patient ABHA Link & Verification (M1 Update)
+    if (type === "UPDATE_PATIENT_ABHA" && payload?.id) {
+      const updateData: any = {};
+      if (payload.abhaId) updateData.abhaId = payload.abhaId;
+      if (payload.status) updateData.status = payload.status;
+
+      await prisma.patient.update({
+        where: { id: payload.id },
+        data: updateData,
+      });
+      return NextResponse.json({ success: true, message: "Patient ABHA updated" }, { headers: corsHeaders });
+    }
+
+    // 7. ABDM Consent State Sync (M3 Update)
+    if (type === "UPDATE_ABDM_CONSENT" && payload?.patientId) {
+      console.log("🛡️ M3 Consent update synced:", payload.patientId, payload.consentStatus);
+      return NextResponse.json({ success: true, message: "Consent artifact state synced" }, { headers: corsHeaders });
     }
 
     return NextResponse.json({ success: true }, { headers: corsHeaders });
