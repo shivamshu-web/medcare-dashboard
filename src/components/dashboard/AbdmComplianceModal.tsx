@@ -30,7 +30,7 @@ export default function AbdmModal({ onClose }: { onClose: () => void }) {
         milestone: "M1",
         event: "Aadhaar e-KYC & ABHA Ingestion",
         patient: p.name,
-        details: `ABHA: ${p.abhaId || "91-VERIFIED-CASE"} • Bed: ${p.bedNumber || "OPD"}`,
+        details: `ABHA: [Aadhaar/ABHA ID Redacted] • Bed: ${p.bedNumber || "OPD"}`,
         time: p.createdAt ? new Date(p.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "Live Today",
         status: "SUCCESS (200 OK)",
       });
@@ -98,7 +98,7 @@ export default function AbdmModal({ onClose }: { onClose: () => void }) {
             {
               type: { coding: [{ system: "http://terminology.hl7.org/CodeSystem/v2-0203", code: "MR" }] },
               system: "https://healthid.ndhm.gov.in",
-              value: p.abhaId,
+              value: "[Aadhaar/ABHA ID Redacted]",
             },
           ],
           name: [{ text: p.name }],
@@ -132,8 +132,14 @@ export default function AbdmModal({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 backdrop-blur-xs p-4 overflow-y-auto">
-      <div className="bg-white w-full max-w-4xl rounded-3xl p-6 shadow-2xl border border-gray-100 my-6 animate-in fade-in zoom-in-95 font-sans space-y-5">
+    <div 
+      onClick={onClose}
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 overflow-y-auto"
+    >
+      <div 
+        onClick={(e) => e.stopPropagation()}
+        className="bg-white w-full max-w-4xl rounded-3xl p-6 shadow-2xl border border-gray-100 my-6 relative font-sans space-y-5 animate-in fade-in zoom-in-95"
+      >
         
         {/* Header */}
         <div className="flex items-center justify-between border-b pb-4 border-gray-100">
@@ -153,8 +159,16 @@ export default function AbdmModal({ onClose }: { onClose: () => void }) {
               </p>
             </div>
           </div>
-          <button onClick={onClose} className="p-2 text-gray-400 hover:text-gray-700 rounded-full cursor-pointer">
-            <X className="w-5 h-5" />
+          <button 
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onClose();
+            }}
+            className="p-2 text-gray-400 hover:text-gray-900 hover:bg-gray-100 rounded-full cursor-pointer transition"
+          >
+            <X className="w-6 h-6" />
           </button>
         </div>
 
