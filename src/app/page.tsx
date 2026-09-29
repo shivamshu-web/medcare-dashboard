@@ -115,6 +115,7 @@ function Dashboard() {
     setSelectedPatient(patient);
     setIsProfileModalOpen(true);
   };
+
   // Filtered Patients for Global Search (Safe Type Conversion)
   const filteredPatients = useMemo(() => {
     const q = (searchQuery || "").toLowerCase().trim();
@@ -163,14 +164,30 @@ function Dashboard() {
     { id: "APT-111", tokenNo: "T-01", patient: "Ananya Deshmukh", doctor: "Dr. Morgan", time: "10:00 AM", type: "Pediatric Wellness", status: "Confirmed", day: "Sun", dateNum: 13, priority: "Routine" },
   ], []);
 
+  // Live Sync of appointments from Neon DB + fullScheduleDatabase
   const displayedSchedules = useMemo(() => {
-    return fullScheduleDatabase.filter((s) => {
+    const liveApts: ScheduleAppointment[] = (appointments || []).map((a: any, idx: number) => ({
+      id: a.id || `LIVE-APT-${idx}`,
+      tokenNo: `T-${(idx + 1).toString().padStart(2, "0")}`,
+      patient: a.patient || "Admitted Patient",
+      doctor: a.doctor || "Dr. Morgan",
+      time: a.time || "10:30 AM",
+      type: a.type || "General Consult",
+      status: (a.status as any) || "Confirmed",
+      day: "Sat",
+      dateNum: 12,
+      priority: (a.type?.toLowerCase().includes("cardiac") || a.type?.toLowerCase().includes("er") ? "High" : "Normal") as "High" | "Normal",
+    }));
+
+    const combined = [...liveApts, ...fullScheduleDatabase];
+
+    return combined.filter((s) => {
       if (s.dateNum !== selectedDayNum) return false;
       if (scheduleFilter === "completed") return s.status === "Completed";
       if (scheduleFilter === "upcoming") return s.status === "Confirmed" || s.status === "Pending" || s.status === "In Progress";
       return true;
     });
-  }, [fullScheduleDatabase, selectedDayNum, scheduleFilter]);
+  }, [appointments, fullScheduleDatabase, selectedDayNum, scheduleFilter]);
 
   const handleCallToken = (token: string, name: string) => {
     setTokenAnnounced(`Token ${token}: ${name}`);
@@ -189,9 +206,7 @@ function Dashboard() {
     return <LoginView onLoginSuccess={handleLoginSuccess} />;
   }
 
-  const availableBedsCount = beds ? beds.filter((b) => b.status === "Available").length : 0;
-  const occupiedBedsCount = beds ? beds.filter((b) => b.status === "Occupied").length : 0;
-  const totalBloodUnits = bloodStock ? bloodStock.reduce((acc, b) => acc + b.unitsAvailable, 0) : 0;
+  const totalBloodUnits = bloodStock ? bloodStock.reduce((acc, b) => acc + (b.unitsAvailable || 0), 0) : 0;
 
   return (
     <div className="flex h-screen w-screen bg-[#f4f7f6] overflow-hidden font-sans">
@@ -251,7 +266,7 @@ function Dashboard() {
                 </div>
                 <button
                   onClick={() => setSearchQuery("")}
-                  className="text-xs text-gray-400 hover:text-gray-700 font-bold"
+                  className="text-xs text-gray-400 hover:text-gray-700 font-bold cursor-pointer"
                 >
                   Clear Search
                 </button>
@@ -534,7 +549,7 @@ function Dashboard() {
                                   : "text-gray-500 hover:text-gray-900"
                               }`}
                             >
-                              All ({fullScheduleDatabase.filter((s) => s.dateNum === selectedDayNum).length})
+                              All ({fullScheduleDatabase.filter((s) => s.dateNum === selectedDayNum).length + (selectedDayNum === 12 ? appointments.length : 0)})
                             </button>
                             <button
                               onClick={() => setScheduleFilter("completed")}
