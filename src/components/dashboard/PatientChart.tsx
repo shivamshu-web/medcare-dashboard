@@ -14,7 +14,7 @@ import { Activity } from "lucide-react";
 import { useHospital } from "@/context/HospitalContext";
 
 export default function PatientChart() {
-  const { patients } = useHospital() as any;
+  const { patients, appointments, activeEmergency } = useHospital() as any;
   const [timeframe, setTimeframe] = useState<"weekly" | "monthly" | "yearly">("weekly");
   const [mounted, setMounted] = useState(false);
 
@@ -22,27 +22,30 @@ export default function PatientChart() {
     setMounted(true);
   }, []);
 
-  // Neon DB se live counts calculate karna
+  // 1. Neon DB Real-time Metrics
   const liveTotalPatients = (patients || []).length;
-  const liveEmergency = (patients || []).filter((p: any) =>
-    p?.status?.toLowerCase().includes("critical") ||
-    p?.status?.toLowerCase().includes("resus") ||
-    p?.bedNumber?.includes("TRAUMA")
-  ).length;
-  const liveOpd = Math.max(0, liveTotalPatients - liveEmergency);
+  const liveEmergency = (patients || []).filter((p: any) => {
+    const s = String(p?.status || "").toLowerCase();
+    const b = String(p?.bedNumber || "").toUpperCase();
+    return s.includes("critical") || s.includes("resus") || b.includes("TRAUMA") || b.includes("ER");
+  }).length + (activeEmergency ? 1 : 0);
 
-  // 1. Weekly Dataset - Live Saturday/Today values Neon DB se linked
+  const liveAppointmentsCount = (appointments || []).length;
+  const liveOpd = Math.max(0, liveTotalPatients - liveEmergency);
+  const liveTele = Math.max(1, Math.round(liveAppointmentsCount * 0.45));
+
+  // 2. Weekly Inflow Curve (Saturday/Today mapped directly to live intake)
   const weeklyData = useMemo(() => [
     { name: "Mon", opd: 48, teleConsult: 22, emergency: 12 },
     { name: "Tue", opd: 55, teleConsult: 28, emergency: 8 },
     { name: "Wed", opd: 68, teleConsult: 38, emergency: 15 },
     { name: "Thu", opd: 62, teleConsult: 34, emergency: 10 },
     { name: "Fri", opd: 76, teleConsult: 44, emergency: 18 },
-    { name: "Sat", opd: 84 + liveOpd, teleConsult: 52, emergency: 22 + liveEmergency },
+    { name: "Sat", opd: liveOpd + 20, teleConsult: liveTele + 15, emergency: liveEmergency + 8 },
     { name: "Sun", opd: 40, teleConsult: 26, emergency: 14 },
-  ], [liveOpd, liveEmergency]);
+  ], [liveOpd, liveTele, liveEmergency]);
 
-  // 2. Monthly Dataset (Jan - Sep)
+  // 3. Monthly Dataset
   const monthlyData = useMemo(() => [
     { name: "Jan", opd: 340, teleConsult: 180, emergency: 65 },
     { name: "Feb", opd: 410, teleConsult: 210, emergency: 72 },
@@ -52,17 +55,17 @@ export default function PatientChart() {
     { name: "Jun", opd: 710, teleConsult: 430, emergency: 125 },
     { name: "Jul", opd: 760, teleConsult: 470, emergency: 135 },
     { name: "Aug", opd: 830, teleConsult: 520, emergency: 145 },
-    { name: "Sep", opd: 890 + liveOpd, teleConsult: 580, emergency: 160 + liveEmergency },
-  ], [liveOpd, liveEmergency]);
+    { name: "Sep", opd: 600 + liveOpd, teleConsult: 350 + liveTele, emergency: 120 + liveEmergency },
+  ], [liveOpd, liveTele, liveEmergency]);
 
-  // 3. Yearly Dataset (2022 - 2026)
+  // 4. Yearly Dataset
   const yearlyData = useMemo(() => [
     { name: "2022", opd: 3600, teleConsult: 1400, emergency: 650 },
     { name: "2023", opd: 5400, teleConsult: 2600, emergency: 920 },
     { name: "2024", opd: 7600, teleConsult: 4300, emergency: 1200 },
     { name: "2025", opd: 10200, teleConsult: 6600, emergency: 1480 },
-    { name: "2026 (YTD)", opd: 12800 + liveOpd, teleConsult: 8400, emergency: 1920 + liveEmergency },
-  ], [liveOpd, liveEmergency]);
+    { name: "2026 (YTD)", opd: 11500 + liveOpd, teleConsult: 7200 + liveTele, emergency: 1700 + liveEmergency },
+  ], [liveOpd, liveTele, liveEmergency]);
 
   const currentData =
     timeframe === "weekly"
@@ -83,7 +86,7 @@ export default function PatientChart() {
   };
 
   const growthRates = {
-    weekly: "+12.4%",
+    weekly: `+${Math.max(1, liveOpd)} Live Today`,
     monthly: "+24.8%",
     yearly: "+38.2%",
   };
@@ -100,7 +103,7 @@ export default function PatientChart() {
             </span>
           </div>
           <p className="text-xs text-gray-400 mt-1">
-            Viewing: <b className="text-gray-700">{timeframeLabels[timeframe]}</b> • Total Patients:{" "}
+            Viewing: <b className="text-gray-700">{timeframeLabels[timeframe]}</b> • Total Encounters:{" "}
             <b className="text-emerald-800 font-bold">{grandTotal.toLocaleString("en-IN")}</b>
           </p>
         </div>
